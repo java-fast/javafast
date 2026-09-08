@@ -1,0 +1,69 @@
+package io.javafast.internal.router;
+
+import io.javafast.http.*;
+import io.javafast.router.HandlerWrapper;
+import io.javafast.security.AccessController;
+
+import java.util.List;
+
+/**
+ * Internal routing engine. The package is intentionally not exported by the JavaFast module.
+ */
+public final class Router {
+
+    private final RouteRegistry registry;
+
+    public Router() {
+        this(false, false, false, null);
+    }
+
+    public Router(boolean ignoreTrailingSlashes, boolean multipleSlashes,
+                  boolean caseInsensitive, HandlerWrapper wrapper) {
+        this(new RouteRegistry(ignoreTrailingSlashes, multipleSlashes, caseInsensitive, wrapper));
+    }
+
+    Router(RouteRegistry registry) {
+        this.registry = registry;
+    }
+
+    void handle(Context ctx) throws Exception {
+        final RouteMatch match = find(ctx.method(), ctx.path());
+        if (match == null) {
+            throw new HttpResponseException(HttpStatus.NOT_FOUND);
+        }
+
+        // TODO how to add path params to the context?
+        // TODO ContextInternal?
+        // ctx.setPathParams(match.pathParams());
+
+        AccessController access = match.route().accessController();
+        if (access != null && !access.isAllowed(ctx)) {
+            throw new HttpResponseException(HttpStatus.FORBIDDEN);
+        }
+        match.route().handler().handle(ctx);
+    }
+
+    public void add(HttpMethod method, String path, Handler handler) {
+        this.registry.add(method, path, handler, null);
+    }
+
+    public void add(HttpMethod method, String path, Handler handler, AccessController controller) {
+        this.registry.add(method, path, handler, controller);
+    }
+
+    public void add(HandlerPhase phase, String path, Handler handler) {
+        this.registry.add(phase, path, handler);
+    }
+
+    public RouteMatch find(HttpMethod method, String requestPath) {
+        return this.registry.findFirst(method, requestPath);
+    }
+
+    public List<RouteMatch> findAll(HttpMethod method, String requestPath) {
+        return this.registry.findAll(method, requestPath);
+    }
+
+    public boolean has(HttpMethod method, String requestPath) {
+        return this.registry.has(method, requestPath);
+    }
+}

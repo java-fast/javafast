@@ -1,0 +1,22 @@
+plugins {
+    id 'java'
+    id 'groovy'
+}
+
+group = 'io.javafast'
+version = '1.0.0-SNAPSHOT'
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    testImplementation platform('org.apache.groovy:groovy-bom:5.0.2')
+    testImplementation 'org.apache.groovy:groovy'
+    testImplementation 'org.spockframework:spock-core:2.4-groovy-5.0'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+test {
+    useJUnitPlatform()
+}
