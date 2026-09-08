@@ -1,14 +1,16 @@
 package io.javafast.validation;
 
 import java.util.ArrayList;
-import java.util.EnumMap;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Function;
 
-/** Factory and converter registry behind JavaFast's validation API. */
+/**
+ * Factory and converter registry behind JavaFast's validation API.
+ */
 public final class Validation {
+
     private final Map<Class<?>, Function<String, ?>> converters = new HashMap<>();
 
     public Validation() {
@@ -40,7 +42,7 @@ public final class Validation {
         Map<String, List<ValidationError<?>>> result = new HashMap<>();
         for (Validator<?> validator : validators) {
             validator.errors().forEach((field, errors) ->
-                    result.computeIfAbsent(field, ignored -> new ArrayList<>()).addAll(errors));
+                result.computeIfAbsent(field, ignored -> new ArrayList<>()).addAll(errors));
         }
         result.replaceAll((key, value) -> List.copyOf(value));
         return Map.copyOf(result);
