@@ -36,7 +36,7 @@ public final class Router {
         // TODO ContextInternal?
         // ctx.setPathParams(match.pathParams());
 
-        AccessController access = match.route().accessController();
+        final AccessController access = match.route().accessController();
         if (access != null && !access.isAllowed(ctx)) {
             throw new HttpResponseException(HttpStatus.FORBIDDEN);
         }
@@ -55,11 +55,11 @@ public final class Router {
         this.registry.add(phase, path, handler);
     }
 
-    public RouteMatch find(HttpMethod method, String requestPath) {
+    RouteMatch find(HttpMethod method, String requestPath) {
         return this.registry.findFirst(method, requestPath);
     }
 
-    public List<RouteMatch> findAll(HttpMethod method, String requestPath) {
+    List<RouteMatch> findAll(HttpMethod method, String requestPath) {
         return this.registry.findAll(method, requestPath);
     }
 
