@@ -32,9 +32,7 @@ public final class Router {
             throw new HttpResponseException(HttpStatus.NOT_FOUND);
         }
 
-        // TODO how to add path params to the context?
-        // TODO ContextInternal?
-        // ctx.setPathParams(match.pathParams());
+        ((ContextInternal) ctx).setPathParamMap(match.pathParams());
 
         final AccessController access = match.route().accessController();
         if (access != null && !access.isAllowed(ctx)) {

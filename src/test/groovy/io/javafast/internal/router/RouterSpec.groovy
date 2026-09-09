@@ -4,7 +4,6 @@ import io.javafast.http.Handler
 import io.javafast.http.HttpResponseException
 import io.javafast.http.HttpMethod
 import io.javafast.http.HttpStatus
-import io.javafast.http.Context
 import io.javafast.security.AccessController
 import spock.lang.Specification
 
@@ -43,7 +42,7 @@ class RouterSpec extends Specification {
     def "should throw not found when no route matches in handle"() {
         given:
         def router = new Router()
-        Context ctx = Stub() {
+        ContextInternal ctx = Stub() {
             method() >> HttpMethod.GET
             path() >> "/missing"
         }
@@ -63,7 +62,7 @@ class RouterSpec extends Specification {
         Handler handler = { ignored -> handlerCalled = true }
         AccessController denyAll = { ignored -> false }
         router.add(HttpMethod.GET, "/users/{id}", handler, denyAll)
-        Context ctx = Stub() {
+        ContextInternal ctx = Stub() {
             method() >> HttpMethod.GET
             path() >> "/users/42"
         }
@@ -83,7 +82,7 @@ class RouterSpec extends Specification {
         boolean handlerCalled = false
         Handler handler = { ignored -> handlerCalled = true }
         router.add(HttpMethod.GET, "/users/{id}", handler, null)
-        Context ctx = Stub() {
+        ContextInternal ctx = Stub() {
             method() >> HttpMethod.GET
             path() >> "/users/42"
         }

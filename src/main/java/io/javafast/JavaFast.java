@@ -7,45 +7,64 @@ import java.util.function.Consumer;
 
 public class JavaFast {
 
-    private JavaFastState unsafe;
+    private final JavaFastState state;
 
-    // public JettyServer jettyServer() {}
+    protected JavaFast(JavaFastState state) {
+        this.state = state;
+    }
 
+    /**
+     * Creates a new instance of JavaFast with default configuration.
+     * The server does not run until {@link #start()} is called.
+     *
+     * @return JavaFast instance
+     * @see #create(Consumer)
+     */
     public static JavaFast create() {
-        // TODO implement
-        return new JavaFast();
+        return create(c -> {
+        });
     }
 
+    /**
+     * Creates a new instance of JavaFast with custom configuration.
+     * The server does not run until {@link #start()} is called.
+     *
+     * @param config Configuration consumer
+     * @return JavaFast instance
+     */
     public static JavaFast create(Consumer<JavaFastConfig> config) {
-        // TODO implement
-        return new JavaFast();
+        final JavaFastState state = new JavaFastState();
+        config.accept(new JavaFastConfig(state));
+        return new JavaFast(state);
     }
 
+    /**
+     * Creates a new instance of JavaFast with custom configuration and starts the server.
+     *
+     * @param config Configuration consumer
+     * @return JavaFast instance
+     */
     public static JavaFast start(Consumer<JavaFastConfig> config) {
-        // TODO implement
-        return new JavaFast();
+        return create(config).start();
     }
-
-    // public Servlet javalinServlet() {}
 
     public JavaFast start(String host, int port) {
         // TODO implement
-        return new JavaFast();
+        return this;
     }
 
     public JavaFast start(int port) {
-        // TODO implement
-        return new JavaFast();
+        // TODO set port
+        return this;
     }
 
     public JavaFast start() {
-        // TODO implement
-        return new JavaFast();
+        return this;
     }
 
     public JavaFast stop() {
         // TODO implement
-        return new JavaFast();
+        return this;
     }
 
     public int port() {

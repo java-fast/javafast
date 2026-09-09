@@ -180,7 +180,7 @@ final class RoutePattern {
             return new ParameterSegment(name, true);
         }
 
-        // Preserve Javalin's useful composite form such as "file-{name}.txt" without regex.
+        // Support composite forms such as "file-{name}.txt" without regex.
         if (value.indexOf('{') >= 0 || value.indexOf('<') >= 0) {
             List<Part> parts = new ArrayList<>();
             int i = 0;

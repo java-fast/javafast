@@ -14,8 +14,8 @@ public class JavaFastState {
     public final HttpConfig http = new HttpConfig();
     public final RouterConfig router = new RouterConfig();
 
-    // FEATURE CONFIGS - StaticFileConfig files, SPAs, and routes
-//    public final RoutesConfig routes = new RoutesConfig(this);
+    // FEATURE CONFIGS - routes
+    public final RoutesConfig routes = new RoutesConfig(this.router);
 
     // CROSS-CUTTING CONFIGS - Validation, context resolution, logging, plugins, events
     public final ValidationConfig validation = new ValidationConfig();
