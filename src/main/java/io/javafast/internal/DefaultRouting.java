@@ -16,12 +16,10 @@ import io.javafast.security.AccessController;
 public final class DefaultRouting implements RoutingApi {
 
     private final Router router;
-
     private final ErrorMapper errors = new ErrorMapper();
     private final ExceptionMapper exceptions = new ExceptionMapper();
 
-    public DefaultRouting(boolean ignoreTrailingSlashes, boolean multipleSlashes,
-                          boolean caseInsensitive, HandlerWrapper wrapper) {
+    public DefaultRouting(boolean ignoreTrailingSlashes, boolean multipleSlashes, boolean caseInsensitive, HandlerWrapper wrapper) {
         this.router = new Router(ignoreTrailingSlashes, multipleSlashes, caseInsensitive, wrapper);
     }
 
@@ -54,15 +52,4 @@ public final class DefaultRouting implements RoutingApi {
         return this;
     }
 
-    public Router router() {
-        return this.router;
-    }
-
-    public ErrorMapper errors() {
-        return this.errors;
-    }
-
-    public ExceptionMapper exceptions() {
-        return this.exceptions;
-    }
 }

@@ -21,10 +21,10 @@ public final class ErrorMapper {
     }
 
     public void handle(int status, Context context) throws Exception {
-        List<Entry> entries = handlers.get(status);
+        final List<Entry> entries = this.handlers.get(status);
         if (entries == null) return;
 
-        String accept = context.header("Accept");
+        final String accept = context.header("Accept");
         for (Entry entry : entries) {
             if ("*".equals(entry.contentType) || accepts(accept, entry.contentType)) {
                 entry.handler.handle(context);

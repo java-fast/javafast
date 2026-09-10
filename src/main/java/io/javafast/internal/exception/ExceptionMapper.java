@@ -12,8 +12,8 @@ import java.util.Map;
  */
 public final class ExceptionMapper {
 
-    private final Map<Class<? extends Exception>, ExceptionHandler<?>> handlers = new HashMap<>();
-    private final Map<Class<? extends Exception>, ExceptionHandler<?>> resolved = new HashMap<>();
+    private final Map<Class<? extends Exception>, ExceptionHandler<Exception>> handlers = new HashMap<>();
+    private final Map<Class<? extends Exception>, ExceptionHandler<Exception>> resolved = new HashMap<>();
 
     public ExceptionMapper() {
         add(HttpResponseException.class, (HttpResponseException exception, Context context) -> {
@@ -23,44 +23,49 @@ public final class ExceptionMapper {
     }
 
     public <E extends Exception> void add(Class<E> type, ExceptionHandler<? super E> handler) {
-        handlers.put(type, handler);
-        resolved.clear();
+        this.handlers.put(type, (exception, context) -> handler.handle(type.cast(exception), context));
+        this.resolved.clear();
     }
 
-    public boolean handle(Context context, Throwable throwable) throws Exception {
+    public boolean handle(Context context, Throwable throwable) {
         if (!(throwable instanceof Exception exception)) return false;
 
-        ExceptionHandler<?> handler = resolve(exception.getClass());
+        final var handler = resolve(exception.getClass());
         if (handler == null) return false;
         invoke(handler, exception, context);
         return true;
     }
 
-    private ExceptionHandler<?> resolve(Class<? extends Exception> type) {
-        ExceptionHandler<?> cached = resolved.get(type);
+    private ExceptionHandler<Exception> resolve(Class<? extends Exception> type) {
+        final var cached = this.resolved.get(type);
         if (cached != null) return cached;
 
         Class<?> current = type;
         while (current != null && current != Object.class) {
-            ExceptionHandler<?> handler = handlers.get((Class<? extends Exception>) current);
-            if (handler != null) {
-                resolved.put(type, handler);
-                return handler;
-            }
+            final ExceptionHandler<Exception> handler = getExceptionHandler(type, current);
+            if (handler != null) return handler;
             for (Class<?> iface : current.getInterfaces()) {
-                ExceptionHandler<?> interfaceHandler = handlers.get((Class<? extends Exception>) iface);
-                if (interfaceHandler != null) {
-                    resolved.put(type, interfaceHandler);
-                    return interfaceHandler;
-                }
+                final ExceptionHandler<Exception> interfaceHandler = getExceptionHandler(type, iface);
+                if (interfaceHandler != null) return interfaceHandler;
             }
             current = current.getSuperclass();
         }
         return null;
     }
 
-    @SuppressWarnings({"rawtypes"})
-    private static void invoke(ExceptionHandler handler, Exception exception, Context context) {
+    private ExceptionHandler<Exception> getExceptionHandler(Class<? extends Exception> type, Class<?> current) {
+        if (Exception.class.isAssignableFrom(current)) {
+            final var exceptionClass = current.asSubclass(Exception.class);
+            final var handler = this.handlers.get(exceptionClass);
+            if (handler != null) {
+                this.resolved.put(type, handler);
+                return handler;
+            }
+        }
+        return null;
+    }
+
+    private static void invoke(ExceptionHandler<Exception> handler, Exception exception, Context context) {
         handler.handle(exception, context);
     }
 }
