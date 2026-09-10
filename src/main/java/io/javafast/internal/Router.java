@@ -1,4 +1,4 @@
-package io.javafast.internal.router;
+package io.javafast.internal;
 
 import io.javafast.http.*;
 import io.javafast.router.HandlerWrapper;

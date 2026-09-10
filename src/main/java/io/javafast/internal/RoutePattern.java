@@ -1,4 +1,4 @@
-package io.javafast.internal.router;
+package io.javafast.internal;
 
 import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;

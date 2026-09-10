@@ -1,25 +1,54 @@
-package io.javafast.internal.router;
+package io.javafast.internal;
 
 import io.javafast.http.*;
 import io.javafast.json.JsonMapper;
 import io.javafast.plugin.ContextPlugin;
+import io.javafast.transport.HttpExchange;
 import io.javafast.validation.BodyValidator;
 import io.javafast.validation.Validator;
 
+import java.io.ByteArrayInputStream;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.lang.reflect.Type;
 import java.nio.charset.Charset;
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.function.Function;
 import java.util.stream.Stream;
 
 class ContextInternal implements Context {
 
-    String contextPath;
-    Map<String, String> pathParamMap;
-    Map<String, List<String>> headerMap;
+    private final HttpExchange exchange;
+
+    private final HttpMethod method;
+    private final String path;
+    private final String queryString;
+
+    private String contextPath;
+    private Map<String, String> pathParamMap;
+    private Map<String, String> headerMap;
+
+    private int statusCode = HttpStatus.OK.code();
+    private String result;
+    private InputStream resultInputStream;
+
+    ContextInternal(HttpExchange exchange) {
+        this.exchange = exchange;
+        this.method = HttpMethod.of(exchange.method());
+
+        final String uri = exchange.uri();
+        final int queryIndex = uri.indexOf('?');
+        if (queryIndex >= 0) {
+            this.path = uri.substring(0, queryIndex);
+            this.queryString = uri.substring(queryIndex + 1);
+        } else {
+            this.path = uri;
+            this.queryString = "";
+        }
+    }
 
     @Override
     public int contentLength() {
@@ -33,12 +62,12 @@ class ContextInternal implements Context {
 
     @Override
     public HttpMethod method() {
-        return null;
+        return this.method;
     }
 
     @Override
     public String path() {
-        return "";
+        return this.path;
     }
 
     @Override
@@ -93,7 +122,7 @@ class ContextInternal implements Context {
 
     @Override
     public String queryString() {
-        return "";
+        return this.queryString;
     }
 
     @Override
@@ -173,7 +202,7 @@ class ContextInternal implements Context {
 
     @Override
     public String pathParam(String key) {
-        return "";
+        return this.pathParamMap.get(key);
     }
 
     @Override
@@ -183,7 +212,7 @@ class ContextInternal implements Context {
 
     @Override
     public Map<String, String> pathParamMap() {
-        return Map.of();
+        return this.pathParamMap;
     }
 
     @Override
@@ -233,7 +262,10 @@ class ContextInternal implements Context {
 
     @Override
     public String header(String name) {
-        return "";
+        if (this.headerMap != null && this.headerMap.containsKey(name)) {
+            return this.headerMap.get(name);
+        }
+        return this.exchange.header(name);
     }
 
     @Override
@@ -243,7 +275,7 @@ class ContextInternal implements Context {
 
     @Override
     public Map<String, String> headerMap() {
-        return Map.of();
+        return this.headerMap;
     }
 
     @Override
@@ -308,32 +340,38 @@ class ContextInternal implements Context {
 
     @Override
     public OutputStream outputStream() {
-        return null;
+        return this.exchange.responseBody();
     }
 
     @Override
     public Context result(String value) {
-        return null;
+        this.result = value;
+        this.resultInputStream = new ByteArrayInputStream(value.getBytes(StandardCharsets.UTF_8));
+        return this;
     }
 
     @Override
     public Context result(byte[] bytes) {
-        return null;
+        this.result = new String(bytes, StandardCharsets.UTF_8);
+        this.resultInputStream = new ByteArrayInputStream(bytes);
+        return this;
     }
 
     @Override
     public Context result(InputStream stream) {
-        return null;
+        this.resultInputStream = stream;
+        this.result = "";
+        return this;
     }
 
     @Override
     public String result() {
-        return "";
+        return this.result;
     }
 
     @Override
     public InputStream resultInputStream() {
-        return null;
+        return Objects.requireNonNullElseGet(this.resultInputStream, () -> new ByteArrayInputStream(new byte[0]));
     }
 
     @Override
@@ -363,22 +401,24 @@ class ContextInternal implements Context {
 
     @Override
     public Context status(HttpStatus status) {
-        return null;
+        this.statusCode = status.code();
+        return this;
     }
 
     @Override
     public Context status(int status) {
-        return null;
+        this.statusCode = status;
+        return this;
     }
 
     @Override
     public HttpStatus status() {
-        return null;
+        return HttpStatus.forStatus(this.statusCode);
     }
 
     @Override
     public int statusCode() {
-        return 0;
+        return this.statusCode;
     }
 
     @Override
@@ -429,8 +469,20 @@ class ContextInternal implements Context {
         this.pathParamMap = pathParamMap;
     }
 
-    void setHeaderMap(Map<String, List<String>> headerMap) {
-        this.headerMap = headerMap;
+    void setHeaderMap(Map<String, String> headerMap) {
+        // TODO remove extra copy? We can internally always set an unmodifiable map
+        this.headerMap = Map.copyOf(headerMap);
+    }
+
+    void writeResponseToExchange() throws Exception {
+        if (this.exchange == null) {
+            return;
+        }
+        this.exchange.status(this.statusCode);
+        InputStream stream = resultInputStream();
+        try (stream; OutputStream out = this.exchange.responseBody()) {
+            stream.transferTo(out);
+        }
     }
 
 }

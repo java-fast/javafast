@@ -1,4 +1,5 @@
-package io.javafast.internal.router
+package io.javafast.internal
+
 
 import spock.lang.Specification
 

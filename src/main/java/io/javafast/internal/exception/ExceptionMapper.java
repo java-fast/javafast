@@ -1,4 +1,4 @@
-package io.javafast.internal.router.exception;
+package io.javafast.internal.exception;
 
 import io.javafast.http.Context;
 import io.javafast.http.ExceptionHandler;
@@ -7,8 +7,11 @@ import io.javafast.http.HttpResponseException;
 import java.util.HashMap;
 import java.util.Map;
 
-/** Internal exception-handler registry. No transport-specific exception knowledge lives here. */
+/**
+ * Internal exception-handler registry. No transport-specific exception knowledge lives here.
+ */
 public final class ExceptionMapper {
+
     private final Map<Class<? extends Exception>, ExceptionHandler<?>> handlers = new HashMap<>();
     private final Map<Class<? extends Exception>, ExceptionHandler<?>> resolved = new HashMap<>();
 
@@ -39,14 +42,12 @@ public final class ExceptionMapper {
 
         Class<?> current = type;
         while (current != null && current != Object.class) {
-            @SuppressWarnings("unchecked")
             ExceptionHandler<?> handler = handlers.get((Class<? extends Exception>) current);
             if (handler != null) {
                 resolved.put(type, handler);
                 return handler;
             }
             for (Class<?> iface : current.getInterfaces()) {
-                @SuppressWarnings("unchecked")
                 ExceptionHandler<?> interfaceHandler = handlers.get((Class<? extends Exception>) iface);
                 if (interfaceHandler != null) {
                     resolved.put(type, interfaceHandler);
@@ -58,7 +59,7 @@ public final class ExceptionMapper {
         return null;
     }
 
-    @SuppressWarnings({"rawtypes", "unchecked"})
+    @SuppressWarnings({"rawtypes"})
     private static void invoke(ExceptionHandler handler, Exception exception, Context context) {
         handler.handle(exception, context);
     }

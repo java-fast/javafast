@@ -4,7 +4,7 @@ import io.javafast.http.ExceptionHandler;
 import io.javafast.http.Handler;
 import io.javafast.http.HandlerPhase;
 import io.javafast.http.HttpMethod;
-import io.javafast.internal.router.DefaultRouting;
+import io.javafast.internal.DefaultRouting;
 import io.javafast.router.RoutingApi;
 import io.javafast.security.AccessController;
 

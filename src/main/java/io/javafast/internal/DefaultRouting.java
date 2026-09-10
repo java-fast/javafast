@@ -1,4 +1,4 @@
-package io.javafast.internal.router;
+package io.javafast.internal;
 
 import io.javafast.http.ExceptionHandler;
 import io.javafast.http.Handler;
@@ -6,8 +6,8 @@ import io.javafast.http.HandlerPhase;
 import io.javafast.http.HttpMethod;
 import io.javafast.router.HandlerWrapper;
 import io.javafast.router.RoutingApi;
-import io.javafast.internal.router.error.ErrorMapper;
-import io.javafast.internal.router.exception.ExceptionMapper;
+import io.javafast.internal.error.ErrorMapper;
+import io.javafast.internal.exception.ExceptionMapper;
 import io.javafast.security.AccessController;
 
 /**

@@ -1,4 +1,4 @@
-package io.javafast.internal.router;
+package io.javafast.internal;
 
 import io.javafast.http.Handler;
 import io.javafast.http.HandlerPhase;
