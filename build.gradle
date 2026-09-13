@@ -3,7 +3,7 @@ plugins {
     id 'groovy'
 }
 
-group = 'io.javafast'
+group = 'io.javafast.core'
 version = '1.0.0-SNAPSHOT'
 
 repositories {
