@@ -2,12 +2,7 @@ package io.javafast.internal;
 
 import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
+import java.util.*;
 
 /**
  * Compiled route pattern. Matching is performed directly over path segments;
@@ -39,8 +34,7 @@ final class RoutePattern {
         this.caseInsensitive = caseInsensitive;
     }
 
-    static RoutePattern compile(String rawPath, boolean ignoreTrailingSlash,
-                                boolean multipleSlashes, boolean caseInsensitive) {
+    static RoutePattern compile(String rawPath, boolean ignoreTrailingSlash, boolean multipleSlashes, boolean caseInsensitive) {
         if (rawPath == null || rawPath.isEmpty()) {
             throw new IllegalArgumentException("Route path must not be empty");
         }
@@ -48,25 +42,24 @@ final class RoutePattern {
             throw new IllegalArgumentException("Path '" + rawPath + "' invalid - use '{param}' instead of ':param'.");
         }
 
-        boolean trailingWildcard = rawPath.endsWith(">*") || rawPath.endsWith("}*");
-        String patternPath = trailingWildcard ? rawPath.substring(0, rawPath.length() - 1) : rawPath;
-        boolean wildcard = "*".equals(patternPath);
+        final boolean trailingWildcard = rawPath.endsWith(">*") || rawPath.endsWith("}*");
+        final String patternPath = trailingWildcard ? rawPath.substring(0, rawPath.length() - 1) : rawPath;
+        final boolean wildcard = "*".equals(patternPath);
 
-        List<Segment> segments = parseSegments(patternPath, rawPath, caseInsensitive);
-        return new RoutePattern(rawPath, segments, wildcard, trailingWildcard,
-            ignoreTrailingSlash, multipleSlashes, caseInsensitive);
+        final List<Segment> segments = parseSegments(patternPath, rawPath, caseInsensitive);
+        return new RoutePattern(rawPath, segments, wildcard, trailingWildcard, ignoreTrailingSlash, multipleSlashes, caseInsensitive);
     }
 
     PatternMatch match(String requestPath) {
-        if (wildcard) return PatternMatch.EMPTY;
-        List<String> input = split(requestPath);
+        if (this.wildcard) return PatternMatch.EMPTY;
+        final List<String> input = split(requestPath);
 
         int routeIndex = 0;
         int inputIndex = 0;
         Map<String, String> params = null;
 
-        while (routeIndex < segments.size()) {
-            Segment segment = segments.get(routeIndex);
+        while (routeIndex < this.segments.size()) {
+            final Segment segment = this.segments.get(routeIndex);
             if (segment instanceof WildcardSegment) {
                 return PatternMatch.EMPTY;
             }
@@ -75,17 +68,16 @@ final class RoutePattern {
                 return null;
             }
 
-            if (segment instanceof ParameterSegment p && p.acceptsSlash) {
-                if (inputIndex >= input.size()) return null;
+            if (segment instanceof ParameterSegment(String name, boolean acceptsSlash) && acceptsSlash) {
                 if (params == null) params = new HashMap<>();
-                params.put(p.name, decode(joinRemaining(input, inputIndex)));
+                params.put(name, decode(joinRemaining(input, inputIndex)));
                 inputIndex = input.size();
                 routeIndex++;
                 break;
             }
 
-            String value = input.get(inputIndex++);
-            String captured = segment.match(value, caseInsensitive);
+            final String value = input.get(inputIndex++);
+            final String captured = segment.match(value, this.caseInsensitive);
             if (captured == null) return null;
             if (segment instanceof ParameterSegment p) {
                 if (params == null) params = new HashMap<>();
@@ -97,15 +89,15 @@ final class RoutePattern {
             routeIndex++;
         }
 
-        if (trailingWildcard) {
-            return routeIndex == segments.size() ? new PatternMatch(paramsOrEmpty(params)) : null;
+        if (this.trailingWildcard) {
+            return routeIndex == this.segments.size() ? new PatternMatch(paramsOrEmpty(params)) : null;
         }
 
         if (inputIndex != input.size()) return null;
 
         // The route compiler removes empty segments, so /foo and /foo/ are equivalent
         // only when the configuration says trailing slashes may be ignored.
-        if (!ignoreTrailingSlash && !multipleSlashes && !sameTrailingSlash(rawPath, requestPath)) {
+        if (!this.ignoreTrailingSlash && !this.multipleSlashes && !sameTrailingSlash(this.rawPath, requestPath)) {
             return null;
         }
 
@@ -114,25 +106,22 @@ final class RoutePattern {
 
     private boolean sameTrailingSlash(String route, String request) {
         if ("/".equals(route)) return "/".equals(request);
-        boolean routeSlash = route.endsWith("/");
-        boolean requestSlash = request.endsWith("/");
-        return routeSlash == requestSlash;
+        return route.endsWith("/") == request.endsWith("/");
     }
 
     private List<String> split(String path) {
-        List<String> result = new ArrayList<>();
+        final List<String> result = new ArrayList<>();
         int start = 0;
         for (int i = 0; i <= path.length(); i++) {
             if (i == path.length() || path.charAt(i) == '/') {
                 if (i > start) result.add(path.substring(start, i));
-                else if (!multipleSlashes && i < path.length() && i == start && start > 0) {
-                    // Empty path segments are meaningful when multiple slashes are not collapsed.
-                    result.add("");
+                else if (!this.multipleSlashes && i < path.length() && i == start && start > 0) {
+                    result.add(""); // empty path segments are meaningful when multiple slashes are not collapsed
                 }
                 start = i + 1;
             }
         }
-        if (!result.isEmpty() && result.get(result.size() - 1).isEmpty()) result.remove(result.size() - 1);
+        if (!result.isEmpty() && result.getLast().isEmpty()) result.removeLast();
         return result;
     }
 
@@ -141,7 +130,7 @@ final class RoutePattern {
     }
 
     private static Map<String, String> paramsOrEmpty(Map<String, String> params) {
-        return params == null ? java.util.Collections.emptyMap() : params;
+        return params == null ? Collections.emptyMap() : params;
     }
 
     private static String decode(String value) {
@@ -149,11 +138,11 @@ final class RoutePattern {
     }
 
     private static List<Segment> parseSegments(String path, String rawPath, boolean caseInsensitive) {
-        List<Segment> result = new ArrayList<>();
-        Set<String> names = new HashSet<>();
-        StringBuilder current = new StringBuilder();
+        final List<Segment> result = new ArrayList<>();
+        final Set<String> names = new HashSet<>();
+        final StringBuilder current = new StringBuilder();
         for (int i = 0; i < path.length(); i++) {
-            char c = path.charAt(i);
+            final char c = path.charAt(i);
             if (c == '/') {
                 if (current.length() > 0) {
                     result.add(parseSegment(current.toString(), rawPath, names, caseInsensitive));
@@ -170,27 +159,27 @@ final class RoutePattern {
     private static Segment parseSegment(String value, String rawPath, Set<String> names, boolean caseInsensitive) {
         if ("*".equals(value)) return WildcardSegment.INSTANCE;
         if (value.startsWith("{") && value.endsWith("}") && value.length() > 2) {
-            String name = value.substring(1, value.length() - 1);
+            final String name = value.substring(1, value.length() - 1);
             requireName(name, rawPath, names);
             return new ParameterSegment(name, false);
         }
         if (value.startsWith("<") && value.endsWith(">") && value.length() > 2) {
-            String name = value.substring(1, value.length() - 1);
+            final String name = value.substring(1, value.length() - 1);
             requireName(name, rawPath, names);
             return new ParameterSegment(name, true);
         }
 
         // Support composite forms such as "file-{name}.txt" without regex.
         if (value.indexOf('{') >= 0 || value.indexOf('<') >= 0) {
-            List<Part> parts = new ArrayList<>();
+            final List<Part> parts = new ArrayList<>();
             int i = 0;
             while (i < value.length()) {
-                char open = value.charAt(i);
+                final char open = value.charAt(i);
                 if (open == '{' || open == '<') {
-                    char close = open == '{' ? '}' : '>';
-                    int end = value.indexOf(close, i + 1);
+                    final char close = open == '{' ? '}' : '>';
+                    final int end = value.indexOf(close, i + 1);
                     if (end < 0) throw new IllegalArgumentException("Invalid route '" + rawPath + "'");
-                    String name = value.substring(i + 1, end);
+                    final String name = value.substring(i + 1, end);
                     requireName(name, rawPath, names);
                     parts.add(new ParamPart(name, open == '<'));
                     i = end + 1;
@@ -228,7 +217,7 @@ final class RoutePattern {
     private record LiteralSegment(String value) implements Segment {
         @Override
         public String match(String input, boolean ci) {
-            return ci ? value.equalsIgnoreCase(input) ? input : null : value.equals(input) ? input : null;
+            return ci ? this.value.equalsIgnoreCase(input) ? input : null : this.value.equals(input) ? input : null;
         }
     }
 
@@ -248,14 +237,14 @@ final class RoutePattern {
         @Override
         public String match(String input, boolean ci) {
             int pos = 0;
-            for (int i = 0; i < parts.size(); i++) {
-                Part part = parts.get(i);
+            for (int i = 0; i < this.parts.size(); i++) {
+                final Part part = this.parts.get(i);
                 if (part instanceof TextPart(String value)) {
                     if (ci ? !input.regionMatches(true, pos, value, 0, value.length())
                         : !input.startsWith(value, pos)) return null;
                     pos += value.length();
                 } else if (part instanceof ParamPart) {
-                    int end = nextTextStart(parts, i + 1, input, pos, ci);
+                    final int end = nextTextStart(this.parts, i + 1, input, pos, ci);
                     if (end < pos) return null;
                     pos = end;
                 }
@@ -265,11 +254,11 @@ final class RoutePattern {
 
         void capture(String input, Map<String, String> out) {
             int pos = 0;
-            for (int i = 0; i < parts.size(); i++) {
-                Part part = parts.get(i);
+            for (int i = 0; i < this.parts.size(); i++) {
+                final Part part = this.parts.get(i);
                 if (part instanceof TextPart(String value)) pos += value.length();
                 else if (part instanceof ParamPart p) {
-                    int end = nextTextStart(parts, i + 1, input, pos, false);
+                    final int end = nextTextStart(this.parts, i + 1, input, pos, false);
                     out.put(p.name, decode(input.substring(pos, end)));
                     pos = end;
                 }
@@ -279,7 +268,7 @@ final class RoutePattern {
         private static int nextTextStart(List<Part> parts, int from, String input, int pos, boolean ci) {
             for (int j = from; j < parts.size(); j++) {
                 if (parts.get(j) instanceof TextPart(String value)) {
-                    int index = ci ? indexOfIgnoreCase(input, value, pos) : input.indexOf(value, pos);
+                    final int index = ci ? indexOfIgnoreCase(input, value, pos) : input.indexOf(value, pos);
                     return index < 0 ? input.length() : index;
                 }
             }

@@ -2,8 +2,6 @@ package io.javafast.internal
 
 import io.javafast.http.HttpMethod
 import io.javafast.http.HttpStatus
-import io.javafast.internal.error.ErrorMapper
-import io.javafast.internal.exception.ExceptionMapper
 import io.javafast.test.TestUtils
 import spock.lang.Specification
 
@@ -15,7 +13,7 @@ class DefaultRequestExecutorSpec extends Specification {
         router.add(HttpMethod.GET, "/users/{id}") { ctx ->
             ctx.result(ctx.pathParam("id"))
         }
-        def executor = new DefaultRequestExecutor(router, new ErrorMapper(), new ExceptionMapper())
+        def executor = new DefaultRequestExecutor(router)
         def exchange = TestUtils.exchange("GET", "/users/42")
 
         when:
@@ -30,7 +28,7 @@ class DefaultRequestExecutorSpec extends Specification {
     def "should map not found to exception handler and return 404"() {
         given:
         def router = new Router()
-        def executor = new DefaultRequestExecutor(router, new ErrorMapper(), new ExceptionMapper())
+        def executor = new DefaultRequestExecutor(router)
         def exchange = TestUtils.exchange("GET", "/missing")
 
         when:

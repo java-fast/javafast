@@ -1,4 +1,4 @@
-package io.javafast.internal.exception;
+package io.javafast.internal;
 
 import io.javafast.http.Context;
 import io.javafast.http.ExceptionHandler;
@@ -10,24 +10,24 @@ import java.util.Map;
 /**
  * Internal exception-handler registry. No transport-specific exception knowledge lives here.
  */
-public final class ExceptionMapper {
+final class ExceptionMapper {
 
     private final Map<Class<? extends Exception>, ExceptionHandler<Exception>> handlers = new HashMap<>();
     private final Map<Class<? extends Exception>, ExceptionHandler<Exception>> resolved = new HashMap<>();
 
-    public ExceptionMapper() {
+    ExceptionMapper() {
         add(HttpResponseException.class, (HttpResponseException exception, Context context) -> {
             context.status(exception.status());
             if (exception.getMessage() != null) context.result(exception.getMessage());
         });
     }
 
-    public <E extends Exception> void add(Class<E> type, ExceptionHandler<? super E> handler) {
+    <E extends Exception> void add(Class<E> type, ExceptionHandler<? super E> handler) {
         this.handlers.put(type, (exception, context) -> handler.handle(type.cast(exception), context));
         this.resolved.clear();
     }
 
-    public boolean handle(Context context, Throwable throwable) {
+    boolean handle(Context context, Throwable throwable) {
         if (!(throwable instanceof Exception exception)) return false;
 
         final var handler = resolve(exception.getClass());

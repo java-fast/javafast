@@ -1,4 +1,4 @@
-package io.javafast.internal.error;
+package io.javafast.internal;
 
 import io.javafast.http.Context;
 import io.javafast.http.Handler;
@@ -9,18 +9,18 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Internal status/content-type error handler registry.
+ * Internal status/content-type error handler registry
  */
-public final class ErrorMapper {
+final class ErrorMapper {
 
     private final Map<Integer, List<Entry>> handlers = new HashMap<>();
 
-    public void add(int status, String contentType, Handler handler) {
+    void add(int status, String contentType, Handler handler) {
         this.handlers.computeIfAbsent(status, ignored -> new ArrayList<>())
             .add(new Entry(contentType, handler));
     }
 
-    public void handle(int status, Context context) throws Exception {
+    void handle(int status, Context context) throws Exception {
         final List<Entry> entries = this.handlers.get(status);
         if (entries == null) return;
 

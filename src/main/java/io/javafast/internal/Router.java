@@ -7,17 +7,17 @@ import io.javafast.security.AccessController;
 import java.util.List;
 
 /**
- * Internal routing engine. The package is intentionally not exported by the JavaFast module.
+ * Internal routing engine.
  */
-public final class Router {
+final class Router {
 
     private final RouteRegistry registry;
 
-    public Router() {
+    Router() {
         this(false, false, false, null);
     }
 
-    public Router(boolean ignoreTrailingSlashes, boolean multipleSlashes,
+    Router(boolean ignoreTrailingSlashes, boolean multipleSlashes,
                   boolean caseInsensitive, HandlerWrapper wrapper) {
         this(new RouteRegistry(ignoreTrailingSlashes, multipleSlashes, caseInsensitive, wrapper));
     }
@@ -41,15 +41,15 @@ public final class Router {
         match.route().handler().handle(ctx);
     }
 
-    public void add(HttpMethod method, String path, Handler handler) {
+    void add(HttpMethod method, String path, Handler handler) {
         this.registry.add(method, path, handler, null);
     }
 
-    public void add(HttpMethod method, String path, Handler handler, AccessController controller) {
+    void add(HttpMethod method, String path, Handler handler, AccessController controller) {
         this.registry.add(method, path, handler, controller);
     }
 
-    public void add(HandlerPhase phase, String path, Handler handler) {
+    void add(HandlerPhase phase, String path, Handler handler) {
         this.registry.add(phase, path, handler);
     }
 
@@ -61,7 +61,7 @@ public final class Router {
         return this.registry.findAll(method, requestPath);
     }
 
-    public boolean has(HttpMethod method, String requestPath) {
+    boolean has(HttpMethod method, String requestPath) {
         return this.registry.has(method, requestPath);
     }
 }
