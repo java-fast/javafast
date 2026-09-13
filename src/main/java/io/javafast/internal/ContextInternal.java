@@ -479,8 +479,8 @@ class ContextInternal implements Context {
             return;
         }
         this.exchange.status(this.statusCode);
-        InputStream stream = resultInputStream();
-        try (stream; OutputStream out = this.exchange.responseBody()) {
+        final var stream = resultInputStream();
+        try (stream; final var out = this.exchange.responseBody()) {
             stream.transferTo(out);
         }
     }
