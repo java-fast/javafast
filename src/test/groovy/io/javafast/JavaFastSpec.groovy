@@ -13,7 +13,7 @@ class JavaFastSpec extends Specification {
     def 'test hello world' () {
         setup:
         def app = JavaFast.create {
-            it.transport(JdkTestTransport::new)
+            it.transport.factory(JdkTestTransport::new)
             it.routes.get('/', ctx -> ctx.result('Hello World'))
         }.start(8080)
         def client = HttpClient.newHttpClient()

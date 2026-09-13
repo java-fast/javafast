@@ -2,9 +2,6 @@ package io.javafast.config;
 
 import io.javafast.json.JsonMapper;
 import io.javafast.plugin.Plugin;
-import io.javafast.transport.Transport;
-
-import java.util.function.Supplier;
 
 /**
  * Public-facing configuration API exposed to users in [JavaFast.create].
@@ -18,9 +15,10 @@ public class JavaFastConfig {
 
     private final JavaFastState state;
 
-    // CORE CONFIGS - HTTP, routing
+    // CORE CONFIGS - HTTP, routing, transport
     public final HttpConfig http;
     public final RouterConfig router;
+    public final TransportFactoryConfig transport;
 
     // FEATURE CONFIGS - routes
     public final RoutesConfig routes;
@@ -37,6 +35,7 @@ public class JavaFastConfig {
         this.state = state;
         this.http = state.http;
         this.router = state.router;
+        this.transport = state.transport;
         this.routes = state.routes;
         this.validation = state.validation;
         this.contextResolver = state.contextResolver;
@@ -44,11 +43,12 @@ public class JavaFastConfig {
         this.concurrency = state.concurrency;
     }
 
-    public void transport(Supplier<Transport> transport) {
-        this.state.transport = transport;
+    public void jsonMapper(JsonMapper jsonMapper) {
     }
 
-    public void jsonMapper(JsonMapper jsonMapper) {}
-    public <CFG> void registerPlugin(Plugin<CFG> plugin) {}
-    public <T> void appData(String key, T value) {}
+    public <CFG> void registerPlugin(Plugin<CFG> plugin) {
+    }
+
+    public <T> void appData(String key, T value) {
+    }
 }
