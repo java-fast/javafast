@@ -13,9 +13,13 @@ import io.javafast.security.AccessController;
  */
 public final class DefaultRouting implements RoutingApi {
 
-    private final Router router;
-    private final ErrorMapper errors = new ErrorMapper();
-    private final ExceptionMapper exceptions = new ExceptionMapper();
+    final Router router;
+    final ErrorMapper errors = new ErrorMapper();
+    final ExceptionMapper exceptions = new ExceptionMapper();
+
+    public DefaultRouting() {
+        this(false, false, false, null);
+    }
 
     public DefaultRouting(boolean ignoreTrailingSlashes, boolean multipleSlashes, boolean caseInsensitive, HandlerWrapper wrapper) {
         this.router = new Router(ignoreTrailingSlashes, multipleSlashes, caseInsensitive, wrapper);

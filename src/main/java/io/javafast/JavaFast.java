@@ -2,6 +2,8 @@ package io.javafast;
 
 import io.javafast.config.JavaFastConfig;
 import io.javafast.config.JavaFastState;
+import io.javafast.transport.Transport;
+import io.javafast.transport.TransportConfig;
 
 import java.util.function.Consumer;
 
@@ -9,12 +11,15 @@ public class JavaFast {
 
     private final JavaFastState state;
 
+    // underlying transport can be a servlet container or other transport
+    private Transport transport;
+
     protected JavaFast(JavaFastState state) {
         this.state = state;
     }
 
     /**
-     * Creates a new instance of JavaFast with default configuration.
+     * Creates a new instance of JavaFast with the default configuration.
      * The server does not run until {@link #start()} is called.
      *
      * @return JavaFast instance
@@ -49,26 +54,30 @@ public class JavaFast {
     }
 
     public JavaFast start(String host, int port) {
-        // TODO implement
-        return this;
+        try {
+            this.transport = this.state.transport.get();
+            this.transport.start(new TransportConfig(host, port));
+            return this;
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
     }
 
     public JavaFast start(int port) {
-        // TODO set port
-        return this;
+        return start(null, port);
     }
 
     public JavaFast start() {
-        return this;
+        return start(null, 0);
     }
 
     public JavaFast stop() {
-        // TODO implement
+        this.transport.stop();
         return this;
     }
 
     public int port() {
-        // TODO get from underlying servlet container?
-        return 0;
+        // in case the underlying transport determines a different port, like a random port, etc.
+        return this.transport.port();
     }
 }

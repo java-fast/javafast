@@ -2,26 +2,28 @@ package io.javafast.internal;
 
 import io.javafast.http.HttpStatus;
 import io.javafast.transport.ExchangeHandler;
-import io.javafast.transport.HttpExchange;
+import io.javafast.http.HttpExchange;
 
 /**
- * TODO public or internal?
- * TODO since they are package-private, how to connect pre-configured router, error and exception mappers?
- * Default internal request executor.
+ * Default http exhcange handler
  *
  * <p>Transport adapters can use this executor as their ExchangeHandler implementation.
  * It creates a fresh ContextInternal per request, executes the router pipeline, and flushes the response.</p>
  */
-public final class DefaultRequestExecutor implements ExchangeHandler {
+public final class DefaultHttpExchangeHandler implements ExchangeHandler<HttpExchange> {
 
     private final Router router;
     private final ErrorMapper errorMapper;
     private final ExceptionMapper exceptionMapper;
 
-    public DefaultRequestExecutor(Router router) {
-        this.router = router;
-        this.errorMapper = new ErrorMapper();
-        this.exceptionMapper = new ExceptionMapper();
+    public DefaultHttpExchangeHandler() {
+        this(new DefaultRouting());
+    }
+
+    DefaultHttpExchangeHandler(DefaultRouting routing) {
+        this.router = routing.router;
+        this.errorMapper = routing.errors;
+        this.exceptionMapper = routing.exceptions;
     }
 
     @Override
@@ -35,7 +37,6 @@ public final class DefaultRequestExecutor implements ExchangeHandler {
             }
             this.errorMapper.handle(context.statusCode(), context);
         }
-
         context.writeResponseToExchange();
         exchange.close();
     }

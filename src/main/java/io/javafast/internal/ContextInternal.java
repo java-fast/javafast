@@ -3,7 +3,7 @@ package io.javafast.internal;
 import io.javafast.http.*;
 import io.javafast.json.JsonMapper;
 import io.javafast.plugin.ContextPlugin;
-import io.javafast.transport.HttpExchange;
+import io.javafast.http.HttpExchange;
 import io.javafast.validation.BodyValidator;
 import io.javafast.validation.Validator;
 

@@ -1,7 +1,7 @@
 package io.javafast.transport;
 
-public interface ExchangeHandler {
+public interface ExchangeHandler<T> {
 
-    void handle(HttpExchange exchange) throws Exception;
+    void handle(T exchange) throws Exception;
 
 }

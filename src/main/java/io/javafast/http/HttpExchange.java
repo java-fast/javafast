@@ -1,4 +1,4 @@
-package io.javafast.transport;
+package io.javafast.http;
 
 import java.io.InputStream;
 import java.io.OutputStream;

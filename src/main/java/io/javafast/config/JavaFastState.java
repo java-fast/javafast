@@ -3,16 +3,19 @@ package io.javafast.config;
 import io.javafast.event.EventManager;
 import io.javafast.json.JsonMapper;
 import io.javafast.plugin.Plugin;
+import io.javafast.transport.Transport;
 
 import java.util.function.Consumer;
+import java.util.function.Supplier;
 
 public class JavaFastState {
 
     public JavaFastState() {}
 
-    // CORE CONFIGS - HTTP, routing, and server
+    // CORE CONFIGS - HTTP, routing, and transport
     public final HttpConfig http = new HttpConfig();
     public final RouterConfig router = new RouterConfig();
+    public Supplier<Transport> transport;
 
     // FEATURE CONFIGS - routes
     public final RoutesConfig routes = new RoutesConfig(this.router);

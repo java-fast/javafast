@@ -5,15 +5,15 @@ import io.javafast.http.HttpStatus
 import io.javafast.test.TestUtils
 import spock.lang.Specification
 
-class DefaultRequestExecutorSpec extends Specification {
+class DefaultHttpExchangeHandlerSpec extends Specification {
 
     def "should create ContextInternal per request and write successful response"() {
         given:
-        def router = new Router()
-        router.add(HttpMethod.GET, "/users/{id}") { ctx ->
+        def router = new DefaultRouting()
+        router.get('/users/{id}') { ctx ->
             ctx.result(ctx.pathParam("id"))
         }
-        def executor = new DefaultRequestExecutor(router)
+        def executor = new DefaultHttpExchangeHandler(router)
         def exchange = TestUtils.exchange("GET", "/users/42")
 
         when:
@@ -27,8 +27,7 @@ class DefaultRequestExecutorSpec extends Specification {
 
     def "should map not found to exception handler and return 404"() {
         given:
-        def router = new Router()
-        def executor = new DefaultRequestExecutor(router)
+        def executor = new DefaultHttpExchangeHandler()
         def exchange = TestUtils.exchange("GET", "/missing")
 
         when:

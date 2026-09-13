@@ -3,7 +3,7 @@ package io.javafast.test
 import io.javafast.http.Context
 import io.javafast.http.HttpMethod
 import io.javafast.internal.ContextInternal
-import io.javafast.transport.HttpExchange
+import io.javafast.http.HttpExchange
 
 class TestUtils {
 
