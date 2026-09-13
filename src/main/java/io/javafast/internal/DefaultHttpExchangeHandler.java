@@ -16,11 +16,7 @@ public final class DefaultHttpExchangeHandler implements ExchangeHandler<HttpExc
     private final ErrorMapper errorMapper;
     private final ExceptionMapper exceptionMapper;
 
-    public DefaultHttpExchangeHandler() {
-        this(new DefaultRouting());
-    }
-
-    DefaultHttpExchangeHandler(DefaultRouting routing) {
+    public DefaultHttpExchangeHandler(DefaultRouting routing) {
         this.router = routing.router;
         this.errorMapper = routing.errors;
         this.exceptionMapper = routing.exceptions;

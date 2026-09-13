@@ -1,6 +1,5 @@
 package io.javafast.internal
 
-import io.javafast.http.HttpMethod
 import io.javafast.http.HttpStatus
 import io.javafast.test.TestUtils
 import spock.lang.Specification
@@ -11,24 +10,24 @@ class DefaultHttpExchangeHandlerSpec extends Specification {
         given:
         def router = new DefaultRouting()
         router.get('/users/{id}') { ctx ->
-            ctx.result(ctx.pathParam("id"))
+            ctx.result(ctx.pathParam('id'))
         }
         def executor = new DefaultHttpExchangeHandler(router)
-        def exchange = TestUtils.exchange("GET", "/users/42")
+        def exchange = TestUtils.exchange('GET', '/users/42')
 
         when:
         executor.handle(exchange)
 
         then:
         exchange.statusCode == 200
-        exchange.responseText() == "42"
+        exchange.responseText() == '42'
         exchange.closed
     }
 
     def "should map not found to exception handler and return 404"() {
         given:
-        def executor = new DefaultHttpExchangeHandler()
-        def exchange = TestUtils.exchange("GET", "/missing")
+        def executor = new DefaultHttpExchangeHandler(new DefaultRouting())
+        def exchange = TestUtils.exchange('GET', '/missing')
 
         when:
         executor.handle(exchange)
