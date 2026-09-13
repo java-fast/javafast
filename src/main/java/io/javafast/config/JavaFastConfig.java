@@ -28,7 +28,6 @@ public class JavaFastConfig {
     // CROSS-CUTTING CONFIGS - Validation, context resolution, logging, plugins, events
     public final ValidationConfig validation;
     public final ContextResolverConfig contextResolver;
-    public final EventConfig events;
 
     // MISC SETTINGS - General application-level settings
     public final StartupConfig startup;
@@ -41,13 +40,9 @@ public class JavaFastConfig {
         this.routes = state.routes;
         this.validation = state.validation;
         this.contextResolver = state.contextResolver;
-        this.events = state.events;
         this.startup = state.startup;
         this.concurrency = state.concurrency;
     }
-
-//    @SafeVarargs
-//    public final void requestLifeCycle(TaskInitializer<JavalinServletContext>... requestLifecycle) {}
 
     public void transport(Supplier<Transport> transport) {
         this.state.transport = transport;
