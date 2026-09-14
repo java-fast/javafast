@@ -1,15 +1,13 @@
 package io.javafast.config;
 
-import io.javafast.runtime.ApplicationRuntime;
-import io.javafast.JavaFastRuntime;
+import io.javafast.internal.DefaultRouting;
 import io.javafast.json.JsonMapper;
 import io.javafast.plugin.Plugin;
+import io.javafast.runtime.ApplicationRuntime;
 
 import java.util.function.Consumer;
 
-public class JavaFastState {
-
-    public JavaFastState() {}
+public class JavaFastState implements ApplicationRuntime {
 
     // CORE CONFIGS - HTTP, routing, and transport
     public final HttpConfig http = new HttpConfig();
@@ -27,9 +25,6 @@ public class JavaFastState {
     public final StartupConfig startup = new StartupConfig();
     public final ConcurrencyConfig concurrency = new ConcurrencyConfig();
 
-    // CONTEXT - runtime
-    public final ApplicationRuntime runtime = new JavaFastRuntime(this.routes.routing);
-
     public JsonMapper jsonMapper = null; // lazy?
     public Object appDataManager;
     public Object pluginManager;
@@ -40,7 +35,14 @@ public class JavaFastState {
         return plugin;
     }
 
-    public <T> void appData(String key, T value) {}
+    public <T> void appData(String key, T value) {
+    }
 
-    public static void applyUserConfig(JavaFastState cfg, Consumer<JavaFastConfig> userConfig) {}
+    public static void applyUserConfig(JavaFastState cfg, Consumer<JavaFastConfig> userConfig) {
+    }
+
+    @Override
+    public DefaultRouting routing() {
+        return this.routes.routing;
+    }
 }

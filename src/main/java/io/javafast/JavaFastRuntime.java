@@ -1,11 +1,10 @@
 package io.javafast;
 
-import io.javafast.internal.DefaultRouting;
 import io.javafast.runtime.ApplicationRuntime;
 
 import java.util.function.Supplier;
 
-public record JavaFastRuntime(DefaultRouting routing) implements ApplicationRuntime {
+public class JavaFastRuntime {
 
     private static final ScopedValue<ApplicationRuntime> STATE = ScopedValue.newInstance();
 

@@ -7,11 +7,9 @@ import io.javafast.plugin.Plugin;
  * Public-facing configuration API exposed to users in [JavaFast.create].
  * This class provides a safe subset of configuration options, hiding internal APIs.
  * <p>
- * For advanced/dangerous configuration options, use [JavaFast.unsafe] to access [JavaFastState] directly.
- *
  * @see JavaFastState
  */
-public class JavaFastConfig {
+public class JavaFastConfig implements Lazy {
 
     // CORE CONFIGS - HTTP, routing, transport
     public final HttpConfig http;
@@ -47,5 +45,10 @@ public class JavaFastConfig {
     }
 
     public <T> void appData(String key, T value) {
+    }
+
+    @Override
+    public void init() {
+        this.routes.init();
     }
 }

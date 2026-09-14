@@ -39,7 +39,9 @@ public class JavaFast {
      */
     public static JavaFast create(Consumer<JavaFastConfig> config) {
         final JavaFastState state = new JavaFastState();
-        config.accept(new JavaFastConfig(state));
+        final JavaFastConfig jfc = new JavaFastConfig(state);
+        config.accept(jfc);
+        jfc.init(); // lazy init to finalize config changes
         return new JavaFast(state);
     }
 
@@ -56,7 +58,7 @@ public class JavaFast {
     public JavaFast start(String host, int port) {
         try {
             // initialize transport in runtime context
-            this.transport = JavaFastRuntime.call(this.state.runtime, this.state.transport::get);
+            this.transport = JavaFastRuntime.call(this.state, this.state.transport::get);
             this.transport.start(new TransportConfig(host, port));
             return this;
         } catch (Exception e) {

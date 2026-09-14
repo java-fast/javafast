@@ -15,14 +15,36 @@ class JavaFastSpec extends Specification {
         def app = JavaFast.create {
             it.transport.factory(JdkTestTransport::new)
             it.routes.get('/', ctx -> ctx.result('Hello World'))
-        }.start(8080)
+        }.start(8000)
         def client = HttpClient.newHttpClient()
-
-        // wait server to start
 
         when:
         def response = client.send(
-          HttpRequest.newBuilder(URI.create('http://localhost:8080/')).GET().build(),
+          HttpRequest.newBuilder(URI.create('http://localhost:8000/')).GET().build(),
+          HttpResponse.BodyHandlers.ofString()
+        )
+
+        then:
+        response.statusCode() == 200
+        response.body() == 'Hello World'
+
+        cleanup:
+        client.close()
+        app.stop()
+    }
+
+    def 'test hello world with contextPath' () {
+        setup:
+        def app = JavaFast.create {
+            it.transport.factory(JdkTestTransport::new)
+            it.router.contextPath = '/api'
+            it.routes.get('/', ctx -> ctx.result('Hello World'))
+        }.start(8000)
+        def client = HttpClient.newHttpClient()
+
+        when:
+        def response = client.send(
+          HttpRequest.newBuilder(URI.create('http://localhost:8000/api/')).GET().build(),
           HttpResponse.BodyHandlers.ofString()
         )
 
