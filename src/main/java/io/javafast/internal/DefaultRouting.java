@@ -4,21 +4,32 @@ import io.javafast.http.*;
 import io.javafast.router.HandlerWrapper;
 import io.javafast.router.RoutingApi;
 import io.javafast.security.AccessController;
+import io.javafast.util.Util;
 
 /**
  * Default implementation of the public RoutingApi.
  */
 public final class DefaultRouting implements RoutingApi {
 
+    final String contextPath;
     final Router router;
     final ErrorMapper errors = new ErrorMapper();
     final ExceptionMapper exceptions = new ExceptionMapper();
 
     public DefaultRouting() {
-        this(false, false, false, null);
+        this(null, false, false, false, null);
+    }
+
+    public DefaultRouting(String contextPath) {
+        this(contextPath, false, false, false, null);
     }
 
     public DefaultRouting(boolean ignoreTrailingSlashes, boolean multipleSlashes, boolean caseInsensitive, HandlerWrapper wrapper) {
+        this(null, ignoreTrailingSlashes, multipleSlashes, caseInsensitive, wrapper);
+    }
+
+    public DefaultRouting(String contextPath, boolean ignoreTrailingSlashes, boolean multipleSlashes, boolean caseInsensitive, HandlerWrapper wrapper) {
+        this.contextPath = Util.normalizeContextPath(contextPath);
         this.router = new Router(ignoreTrailingSlashes, multipleSlashes, caseInsensitive, wrapper);
     }
 
@@ -41,17 +52,18 @@ public final class DefaultRouting implements RoutingApi {
 
     @Override
     public RoutingApi addHttpHandler(HttpMethod method, String path, Handler handler, AccessController controller) {
-        this.router.add(method, path, handler, controller);
+        this.router.add(method, Util.prefixContextPath(this.contextPath, path), handler, controller);
         return this;
     }
 
     @Override
     public RoutingApi addHandler(HandlerPhase phase, String path, Handler handler) {
-        this.router.add(phase, path, handler);
+        this.router.add(phase, Util.prefixContextPath(this.contextPath, path), handler);
         return this;
     }
 
     public void handle(Context context) throws Exception {
+        ((ContextInternal) context).setContextPath(this.contextPath);
         this.router.handle(context);
     }
 

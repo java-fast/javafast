@@ -16,6 +16,7 @@ public final class RoutesConfig implements RoutingApi {
     public RoutesConfig(RouterConfig routerConfig) {
         this.routerConfig = routerConfig;
         this.routing = new DefaultRouting(
+            routerConfig.contextPath,
             routerConfig.ignoreTrailingSlashes,
             routerConfig.treatMultipleSlashesAsSingleSlash,
             routerConfig.caseInsensitiveRoutes,

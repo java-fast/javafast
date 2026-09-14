@@ -24,6 +24,37 @@ class DefaultHttpExchangeHandlerSpec extends Specification {
         exchange.closed
     }
 
+    def "should custom contextPath including all normalize cases work"() {
+        given:
+        def router = new DefaultRouting(contextPath)
+        router.get('/users/{id}') { ctx ->
+            ctx.result(ctx.pathParam('id'))
+        }
+        def executor = new DefaultHttpExchangeHandler(router)
+        def exchange = TestUtils.exchange('GET', requestPath)
+
+        when:
+        executor.handle(exchange)
+
+        then:
+        exchange.statusCode == 200
+        exchange.responseText() == '42'
+        exchange.closed
+
+        where:
+        contextPath | requestPath
+        null        | '/users/42'
+        ''          | '/users/42'
+        '   '       | '/users/42'
+        '/'         | '/users/42'
+        'api'       | '/api/users/42'
+        '/api'      | '/api/users/42'
+        '/api/'     | '/api/users/42'
+        'api/'      | '/api/users/42'
+        '/api///'   | '/api/users/42'
+        'api///'    | '/api/users/42'
+    }
+
     def "should map not found to exception handler and return 404"() {
         given:
         def executor = new DefaultHttpExchangeHandler(new DefaultRouting())
