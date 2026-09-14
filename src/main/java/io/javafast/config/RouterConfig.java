@@ -3,10 +3,16 @@ package io.javafast.config;
 import io.javafast.router.HandlerWrapper;
 
 public class RouterConfig {
-    public RouterConfig() {}
+
+    // TODO implement
     public String contextPath;
+
     public boolean ignoreTrailingSlashes;
     public boolean treatMultipleSlashesAsSingleSlash;
     public boolean caseInsensitiveRoutes;
-    public void handlerWrapper(HandlerWrapper handlerWrapper) {}
+    public HandlerWrapper handlerWrapper;
+
+    public void handlerWrapper(HandlerWrapper handlerWrapper) {
+        this.handlerWrapper = handlerWrapper;
+    }
 }

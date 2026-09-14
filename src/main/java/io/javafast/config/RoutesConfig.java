@@ -19,7 +19,7 @@ public final class RoutesConfig implements RoutingApi {
             routerConfig.ignoreTrailingSlashes,
             routerConfig.treatMultipleSlashesAsSingleSlash,
             routerConfig.caseInsensitiveRoutes,
-            null // TODO pass custom HandlerWrappers
+            routerConfig.handlerWrapper
         );
     }
 
@@ -47,4 +47,5 @@ public final class RoutesConfig implements RoutingApi {
     public RoutingApi addHandler(HandlerPhase phase, String path, Handler handler) {
         return this.routing.addHandler(phase, path, handler);
     }
+
 }

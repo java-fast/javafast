@@ -12,26 +12,22 @@ import io.javafast.http.HttpExchange;
  */
 public final class DefaultHttpExchangeHandler implements ExchangeHandler<HttpExchange> {
 
-    private final Router router;
-    private final ErrorMapper errorMapper;
-    private final ExceptionMapper exceptionMapper;
+    private final DefaultRouting routing;
 
     public DefaultHttpExchangeHandler(DefaultRouting routing) {
-        this.router = routing.router;
-        this.errorMapper = routing.errors;
-        this.exceptionMapper = routing.exceptions;
+        this.routing = routing;
     }
 
     @Override
     public void handle(HttpExchange exchange) throws Exception {
         final ContextInternal context = new ContextInternal(exchange);
         try {
-            this.router.handle(context);
+            this.routing.handle(context);
         } catch (Throwable throwable) {
-            if (!this.exceptionMapper.handle(context, throwable)) {
+            if (!this.routing.handleException(context, throwable)) {
                 context.status(HttpStatus.INTERNAL_SERVER_ERROR).result(HttpStatus.INTERNAL_SERVER_ERROR.message());
             }
-            this.errorMapper.handle(context.statusCode(), context);
+            this.routing.handleError(context.statusCode(), context);
         }
         context.writeResponseToExchange();
         exchange.close();

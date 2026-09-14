@@ -1,5 +1,7 @@
 package io.javafast.config;
 
+import io.javafast.runtime.ApplicationRuntime;
+import io.javafast.JavaFastRuntime;
 import io.javafast.json.JsonMapper;
 import io.javafast.plugin.Plugin;
 
@@ -24,6 +26,9 @@ public class JavaFastState {
     // MISC SETTINGS - General application-level settings
     public final StartupConfig startup = new StartupConfig();
     public final ConcurrencyConfig concurrency = new ConcurrencyConfig();
+
+    // CONTEXT - runtime
+    public final ApplicationRuntime runtime = new JavaFastRuntime(this.routes.routing);
 
     public JsonMapper jsonMapper = null; // lazy?
     public Object appDataManager;

@@ -1,9 +1,10 @@
 package io.javafast.transport;
 
 import com.sun.net.httpserver.HttpServer;
+import io.javafast.runtime.ApplicationRuntime;
+import io.javafast.JavaFastRuntime;
 import io.javafast.http.HttpExchange;
 import io.javafast.internal.DefaultHttpExchangeHandler;
-import io.javafast.internal.DefaultRouting;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -18,66 +19,75 @@ public class JdkTestTransport implements Transport {
     private HttpServer server;
     private TransportConfig config;
 
-    public JdkTestTransport(DefaultRouting routing) {
-        this.handler = new DefaultHttpExchangeHandler(routing);
+    public JdkTestTransport() {
+        final ApplicationRuntime runtime = JavaFastRuntime.current();
+        this.handler = new DefaultHttpExchangeHandler(runtime.routing());
+    }
+
+    private static class JdkHttpExchange implements HttpExchange {
+
+        com.sun.net.httpserver.HttpExchange exchange;
+
+        private JdkHttpExchange(com.sun.net.httpserver.HttpExchange exchange) {
+            this.exchange = exchange;
+        }
+
+        @Override
+        public String method() {
+            return this.exchange.getRequestMethod();
+        }
+
+        @Override
+        public String uri() {
+            return this.exchange.getRequestURI().toString();
+        }
+
+        @Override
+        public String header(String name) {
+            return this.exchange.getRequestHeaders().getFirst(name);
+        }
+
+        @Override
+        public InputStream requestBody() {
+            return this.exchange.getRequestBody();
+        }
+
+        @Override
+        public void status(int status) {
+            try {
+                this.exchange.sendResponseHeaders(status, 0);
+            } catch (IOException e) {
+                throw new UncheckedIOException(e);
+            }
+        }
+
+        @Override
+        public void header(String name, String value) {
+            this.exchange.getResponseHeaders().set(name, value);
+        }
+
+        @Override
+        public OutputStream responseBody() {
+            return this.exchange.getResponseBody();
+        }
+
+        @Override
+        public void close() {
+            this.exchange.close();
+        }
     }
 
     @Override
     public void start(TransportConfig config) {
         this.config = config;
         try {
-            this.server = HttpServer.create(new InetSocketAddress(config.host() == null ? "localhost": config.host(), config.port()), 0);
+            this.server = HttpServer.create(new InetSocketAddress(config.host() == null ? "localhost" : config.host(), config.port()), 0);
         } catch (IOException e) {
             throw new UncheckedIOException(e);
         }
 
         this.server.createContext("/", exchange -> {
-            final var adaptedExchange = new HttpExchange() {
-                @Override
-                public String method() {
-                    return exchange.getRequestMethod();
-                }
-
-                @Override
-                public String uri() {
-                    return exchange.getRequestURI().toString();
-                }
-
-                @Override
-                public String header(String name) {
-                    return exchange.getRequestHeaders().getFirst(name);
-                }
-
-                @Override
-                public InputStream requestBody() {
-                    return exchange.getRequestBody();
-                }
-
-                @Override
-                public void status(int status) {
-                    try {
-                        exchange.sendResponseHeaders(status, 0);
-                    } catch (IOException e) {
-                        throw new UncheckedIOException(e);
-                    }
-                }
-
-                @Override
-                public void header(String name, String value) {
-                    exchange.getResponseHeaders().set(name, value);
-                }
-
-                @Override
-                public OutputStream responseBody() {
-                    return exchange.getResponseBody();
-                }
-
-                @Override
-                public void close() {
-                    exchange.close();
-                }
-            };
-
+            final var adaptedExchange = new JdkHttpExchange(exchange);
             try {
                 this.handler.handle(adaptedExchange);
             } catch (Exception e) {

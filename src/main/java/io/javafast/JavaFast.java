@@ -55,7 +55,8 @@ public class JavaFast {
 
     public JavaFast start(String host, int port) {
         try {
-            this.transport = this.state.transport.get();
+            // initialize transport in runtime context
+            this.transport = JavaFastRuntime.call(this.state.runtime, this.state.transport::get);
             this.transport.start(new TransportConfig(host, port));
             return this;
         } catch (Exception e) {

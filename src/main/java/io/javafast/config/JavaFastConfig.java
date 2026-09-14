@@ -13,8 +13,6 @@ import io.javafast.plugin.Plugin;
  */
 public class JavaFastConfig {
 
-    private final JavaFastState state;
-
     // CORE CONFIGS - HTTP, routing, transport
     public final HttpConfig http;
     public final RouterConfig router;
@@ -32,7 +30,6 @@ public class JavaFastConfig {
     public final ConcurrencyConfig concurrency;
 
     public JavaFastConfig(JavaFastState state) {
-        this.state = state;
         this.http = state.http;
         this.router = state.router;
         this.transport = state.transport;
