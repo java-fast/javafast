@@ -1,6 +1,7 @@
 package io.javafast.runtime;
 
 import io.javafast.JavaFastRuntime;
+import io.javafast.config.AppData;
 import io.javafast.internal.DefaultRouting;
 
 /**
@@ -10,6 +11,8 @@ public interface ApplicationRuntime {
 
     DefaultRouting routing();
 
-    // maybe we expose more config to the runtime in the feature
+    AppData appData();
+
+    // possibly we expose more config to the runtime in the feature
 
 }

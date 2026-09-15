@@ -1,31 +1,31 @@
 package io.javafast.config;
 
-import java.util.HashMap;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
-public class AppDataManager {
+public class AppDataManager implements AppData {
 
-    private final Map<String, Object> data = new HashMap<>();
+    private final Map<String, Object> data = new ConcurrentHashMap<>();
 
+    @Override
     public <T> void register(String key, T value) {
-        if (data.containsKey(key)) {
+        if (this.data.containsKey(key)) {
             throw new KeyAlreadyExistsException(key);
         }
-        data.put(key, value);
+        this.data.put(key, value);
     }
 
+    @Override
     public <T> void registerIfAbsent(String key, T value) {
-        data.putIfAbsent(key, value);
+        this.data.putIfAbsent(key, value);
     }
 
-    @SuppressWarnings("unchecked")
+    @Override
     public <T> T get(String key) {
-        Object value = data.get(key);
-
+        final Object value = this.data.get(key);
         if (value == null) {
             throw new NoValueForKeyException(key);
         }
-
         return (T) value;
     }
 

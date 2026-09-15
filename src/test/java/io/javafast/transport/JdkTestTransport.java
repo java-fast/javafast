@@ -21,7 +21,7 @@ public class JdkTestTransport implements Transport {
 
     public JdkTestTransport() {
         final ApplicationRuntime runtime = JavaFastRuntime.current();
-        this.handler = new DefaultHttpExchangeHandler(runtime.routing());
+        this.handler = new DefaultHttpExchangeHandler(runtime.routing(), runtime.appData());
     }
 
     private static class JdkHttpExchange implements HttpExchange {

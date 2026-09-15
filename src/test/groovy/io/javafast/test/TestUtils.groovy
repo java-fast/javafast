@@ -70,7 +70,7 @@ class TestUtils {
     }
 
     static Context contextOf(HttpMethod method, String uri) {
-        return new ContextInternal(new TestExchange(method.name(), uri))
+        return new ContextInternal(null, new TestExchange(method.name(), uri))
     }
 
 }

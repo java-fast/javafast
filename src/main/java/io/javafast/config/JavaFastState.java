@@ -9,6 +9,9 @@ import java.util.function.Consumer;
 
 public class JavaFastState implements ApplicationRuntime {
 
+    // APP DATA - Per application key value store
+    final AppDataManager appDataManager = new AppDataManager();
+
     // CORE CONFIGS - HTTP, routing, and transport
     public final HttpConfig http = new HttpConfig();
     public final RouterConfig router = new RouterConfig();
@@ -26,7 +29,6 @@ public class JavaFastState implements ApplicationRuntime {
     public final ConcurrencyConfig concurrency = new ConcurrencyConfig();
 
     public JsonMapper jsonMapper = null; // lazy?
-    public Object appDataManager;
     public Object pluginManager;
 //    public List<RequestLogger> httpRequestLoggers;
 
@@ -35,14 +37,13 @@ public class JavaFastState implements ApplicationRuntime {
         return plugin;
     }
 
-    public <T> void appData(String key, T value) {
-    }
-
-    public static void applyUserConfig(JavaFastState cfg, Consumer<JavaFastConfig> userConfig) {
-    }
-
     @Override
     public DefaultRouting routing() {
         return this.routes.routing;
+    }
+
+    @Override
+    public AppData appData() {
+        return this.appDataManager;
     }
 }

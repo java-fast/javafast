@@ -83,4 +83,11 @@ public class JavaFast {
         // in case the underlying transport determines a different port, like a random port, etc.
         return this.transport.port();
     }
+
+    /**
+     * Access application scope data directly from the JavaFast instance
+     */
+    public <T> T appData(String key) {
+        return this.state.appData().get(key);
+    }
 }

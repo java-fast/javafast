@@ -11,6 +11,9 @@ import io.javafast.plugin.Plugin;
  */
 public class JavaFastConfig implements Lazy {
 
+    // APP DATA - Per application key value store
+    final AppDataManager appDataManager;
+
     // CORE CONFIGS - HTTP, routing, transport
     public final HttpConfig http;
     public final RouterConfig router;
@@ -28,6 +31,7 @@ public class JavaFastConfig implements Lazy {
     public final ConcurrencyConfig concurrency;
 
     public JavaFastConfig(JavaFastState state) {
+        this.appDataManager = state.appDataManager;
         this.http = state.http;
         this.router = state.router;
         this.transport = state.transport;
@@ -45,6 +49,7 @@ public class JavaFastConfig implements Lazy {
     }
 
     public <T> void appData(String key, T value) {
+        this.appDataManager.register(key, value);
     }
 
     @Override

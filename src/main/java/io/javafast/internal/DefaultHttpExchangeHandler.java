@@ -1,5 +1,6 @@
 package io.javafast.internal;
 
+import io.javafast.config.AppData;
 import io.javafast.http.HttpStatus;
 import io.javafast.transport.ExchangeHandler;
 import io.javafast.http.HttpExchange;
@@ -13,14 +14,16 @@ import io.javafast.http.HttpExchange;
 public final class DefaultHttpExchangeHandler implements ExchangeHandler<HttpExchange> {
 
     private final DefaultRouting routing;
+    private final AppData appData;
 
-    public DefaultHttpExchangeHandler(DefaultRouting routing) {
+    public DefaultHttpExchangeHandler(DefaultRouting routing, AppData appData) {
         this.routing = routing;
+        this.appData = appData;
     }
 
     @Override
     public void handle(HttpExchange exchange) throws Exception {
-        final ContextInternal context = new ContextInternal(exchange);
+        final ContextInternal context = new ContextInternal(this.appData, exchange);
         try {
             this.routing.handle(context);
         } catch (Throwable throwable) {

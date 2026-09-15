@@ -1,5 +1,6 @@
 package io.javafast.internal;
 
+import io.javafast.config.AppData;
 import io.javafast.http.*;
 import io.javafast.json.JsonMapper;
 import io.javafast.plugin.ContextPlugin;
@@ -21,6 +22,7 @@ import java.util.stream.Stream;
 
 class ContextInternal implements Context {
 
+    private final AppData appData;
     private final HttpExchange exchange;
 
     private final HttpMethod method;
@@ -35,7 +37,8 @@ class ContextInternal implements Context {
     private String result;
     private InputStream resultInputStream;
 
-    ContextInternal(HttpExchange exchange) {
+    ContextInternal(AppData appData, HttpExchange exchange) {
+        this.appData = appData;
         this.exchange = exchange;
         this.method = HttpMethod.of(exchange.method());
 
@@ -127,7 +130,7 @@ class ContextInternal implements Context {
 
     @Override
     public <T> T appData(String key) {
-        return null;
+        return this.appData.get(key);
     }
 
     @Override
