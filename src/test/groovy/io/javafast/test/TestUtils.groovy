@@ -5,7 +5,7 @@ import io.javafast.http.HttpMethod
 import io.javafast.internal.ContextInternal
 import io.javafast.http.HttpExchange
 
-class TestUtils {
+trait TestUtils {
 
     static class TestExchange implements HttpExchange {
 
@@ -65,11 +65,11 @@ class TestUtils {
 
     }
 
-    static TestExchange exchange(String method, String uri) {
+    TestExchange exchange(String method, String uri) {
         return new TestExchange(method, uri)
     }
 
-    static Context contextOf(HttpMethod method, String uri) {
+    Context contextOf(HttpMethod method, String uri) {
         return new ContextInternal(null, new TestExchange(method.name(), uri))
     }
 

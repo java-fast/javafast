@@ -9,7 +9,7 @@ import io.javafast.security.AccessController
 import io.javafast.test.TestUtils
 import spock.lang.Specification
 
-class RouterSpec extends Specification {
+class RouterSpec extends Specification implements TestUtils {
 
     def "should find route by method and capture path params"() {
         given:
@@ -44,7 +44,7 @@ class RouterSpec extends Specification {
     def "should throw not found when no route matches in handle"() {
         given:
         def router = new Router()
-        Context ctx = TestUtils.contextOf(HttpMethod.GET, '/missing')
+        Context ctx = contextOf(HttpMethod.GET, '/missing')
 
         when:
         router.handle(ctx)
@@ -61,7 +61,7 @@ class RouterSpec extends Specification {
         Handler handler = { ignored -> handlerCalled = true }
         AccessController denyAll = { ignored -> false }
         router.add(HttpMethod.GET, '/users/{id}', handler, denyAll)
-        Context ctx = TestUtils.contextOf(HttpMethod.GET, '/users/42')
+        Context ctx = contextOf(HttpMethod.GET, '/users/42')
 
         when:
         router.handle(ctx)
@@ -78,7 +78,7 @@ class RouterSpec extends Specification {
         boolean handlerCalled = false
         Handler handler = { ignored -> handlerCalled = true }
         router.add(HttpMethod.GET, '/users/{id}', handler, null)
-        Context ctx = TestUtils.contextOf(HttpMethod.GET, '/users/42')
+        Context ctx = contextOf(HttpMethod.GET, '/users/42')
 
         when:
         router.handle(ctx)
