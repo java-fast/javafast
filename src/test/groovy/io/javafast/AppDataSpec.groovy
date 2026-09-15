@@ -8,6 +8,12 @@ import spock.lang.Specification
 
 class AppDataSpec extends Specification implements TestUtils {
 
+    JavaFast app
+
+    def cleanup() {
+        if(app != null) app.stop()
+    }
+
     def 'register throws if key already exists' () {
         when:
         JavaFast.create {
@@ -21,56 +27,42 @@ class AppDataSpec extends Specification implements TestUtils {
     }
 
     def 'data can be accessed through the app' () {
-        setup:
-        def app = create {
+        given:
+        app = create {
             it.appData('answer', 42)
             it.routes.get('/', ctx -> ctx.result('ok'))
         }
 
-        when:
-        def res = get('/')
-
-        then:
-        res.statusCode() == 200
+        expect:
+        get('/').statusCode() == 200
         app.appData('answer') == 42
-
-        cleanup:
-        app.stop()
     }
 
     def 'data can be accessed through the Context' () {
-        setup:
-        def app = create {
+        given:
+        app = create {
             it.appData('answer', 42)
             it.routes.get('/', ctx -> ctx.result(ctx.appData('answer').toString()))
         }
 
-        when:
-        def response = get('/')
-
-        then:
-        response.statusCode() == 200
-        response.body() == '42'
-
-        cleanup:
-        app.stop()
+        expect:
+        verifyAll(get('/')) {
+            statusCode() == 200
+            body() == '42'
+        }
     }
 
     def 'Context#appData() throws if data does not exist' () {
-        setup:
-        def app = create {
+        given:
+        app = create {
             it.routes.get('/', ctx -> ctx.result(ctx.appData('missing-key').toString()))
         }
 
-        when:
-        def response = get('/')
-
-        then:
-        response.statusCode() == 500
-        response.body() == HttpStatus.INTERNAL_SERVER_ERROR.message()
-
-        cleanup:
-        app.stop()
+        expect:
+        verifyAll(get('/')) {
+            statusCode() == 500
+            body() == HttpStatus.INTERNAL_SERVER_ERROR.message()
+        }
     }
 
 }

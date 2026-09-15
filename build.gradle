@@ -20,12 +20,11 @@ dependencies {
 
 test {
     useJUnitPlatform()
-
     testLogging {
         events "passed", "failed", "skipped"
         exceptionFormat "full"
         showStandardStreams = true
     }
-    // carry all system properties starting with "test.*" to test instance
-    systemProperties(System.properties.findAll { k, v -> k.toString().startsWith("test.")} as Map<String, ? extends Object>)
+    // set test properties
+    systemProperty 'test.logger', System.getProperty('test.logger', 'true')
 }

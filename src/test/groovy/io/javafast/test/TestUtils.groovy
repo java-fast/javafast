@@ -15,35 +15,20 @@ import java.net.http.HttpResponse
 import java.util.function.Consumer
 import java.util.function.Supplier
 
-trait TestUtils {
-
-    static PrintStream originalOut
-
-    static {
-        println("TEST PROPERTIES ->")
-        System.properties
-          .findAll {k, v -> k.toString().startsWith('test.')}
-          .each {k, v -> println("\t${k} = ${v}")}
-    }
+trait TestUtils implements Logger {
 
     static HttpClient client
 
     def setupSpec() {
-        boolean logEnabled = Boolean.parseBoolean(System.getProperty("test.logger", "true"))
-        if (!logEnabled) {
-            originalOut = System.out
-            System.setOut(new PrintStream(OutputStream.nullOutputStream()))
-        }
+        printMethodStart()
     }
 
     def cleanupSpec() {
-        if (originalOut != null) {
-            System.setOut(originalOut)
-        }
         if(client != null) {
-            println("Closing HTTP client: ${client}")
+            log("Closing HTTP client: ${client}")
             client.close()
         }
+        printMethodEnd()
     }
 
     static class TestExchange implements HttpExchange {
@@ -112,19 +97,23 @@ trait TestUtils {
         return new ContextInternal(null, new TestExchange(method.name(), uri))
     }
 
-    JavaFast create(Consumer<JavaFastConfig> config, Supplier<Transport> transportFactory = JdkTestTransport::new, int port = 8000) {
+    JavaFast create(int port, Supplier<Transport> transportFactory, Consumer<JavaFastConfig> config) {
         return JavaFast.create {
             it.transport.factory(transportFactory)
             config.accept(it)
         }.start(port)
     }
 
+    JavaFast create(Consumer<JavaFastConfig> config) {
+        return create(8000, JdkTestTransport::new, config)
+    }
+
     HttpClient client() {
-        try {
-            return (client = (client == null) ? HttpClient.newHttpClient() : client)
-        } finally {
-            println("Using HTTP client: ${client}")
+        if (client == null) {
+            client = HttpClient.newHttpClient()
+            log("Using HTTP client: ${client}")
         }
+        return client
     }
 
     HttpResponse<String> get(String url, int port = 8000) {
