@@ -6,10 +6,15 @@ import io.javafast.router.RoutingApi;
 import io.javafast.router.AccessController;
 import io.javafast.util.Util;
 
+import java.util.logging.Level;
+import java.util.logging.Logger;
+
 /**
  * Default implementation of the public RoutingApi.
  */
 public final class DefaultRouting implements RoutingApi {
+
+    private static final Logger log = Logger.getLogger(DefaultRouting.class.getName());
 
     final String contextPath;
     final Router router;
@@ -68,7 +73,17 @@ public final class DefaultRouting implements RoutingApi {
     }
 
     public boolean handleException(Context context, Throwable throwable) {
-        return this.exceptions.handle(context, throwable);
+        try {
+            final boolean handle = this.exceptions.handle(context, throwable);
+            // AFTER phase should run in an exception case as well
+            for (RouteMatch after : this.router.findAll(HandlerPhase.AFTER, context.path())) {
+                after.route().handler().handle(context);
+            }
+            return handle;
+        } catch (Exception e) {
+            log.log(Level.WARNING, "Exception swallowed due to another exception in AFTER phase", throwable);
+            return this.exceptions.handle(context, e);
+        }
     }
 
     public void handleError(int status, Context context) throws Exception {

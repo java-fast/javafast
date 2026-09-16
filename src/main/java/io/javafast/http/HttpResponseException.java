@@ -41,6 +41,6 @@ public class HttpResponseException extends RuntimeException {
     }
 
     public static HttpResponseException notFound(HttpMethod method, String path) {
-        return new HttpResponseException(HttpStatus.NOT_FOUND, "Endpoint %s %s not found!".formatted(method, path));
+        return new HttpResponseException(HttpStatus.NOT_FOUND, "Endpoint %s %s not found".formatted(method, path));
     }
 }

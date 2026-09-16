@@ -23,12 +23,12 @@ class BeforeAfterSpec extends Specification implements TestUtils {
     def 'beforeMatched and afterMatched work' () {
         given:
         create {
-            it.routes.before { it.result('ignored') }
-            it.routes.beforeMatched { it.result('before-matched') }
+            it.routes.before { it.result('ignored') } // should be ignored
+            it.routes.beforeMatched { it.result('before-matched') } // "ignored" is overwritten
             it.routes.get('/hello') { it.result(it.result() + '-hello') }
             it.routes.afterMatched { it.result(it.result() + '-after-1') }
-            it.routes.afterMatched { it.result(it.result() + '-after-2') }
-            it.routes.after { it.result(it.result() + '!') }
+            it.routes.afterMatched { it.result(it.result() + '-after-2') } // multiple phase handlers should work in order
+            it.routes.after { it.result(it.result() + '!') } // should run after even in an exception case!
         }
 
         expect:
@@ -59,11 +59,25 @@ class BeforeAfterSpec extends Specification implements TestUtils {
             headers().firstValue('X-Before-Sub-Curly').isEmpty()
             headers().firstValue('X-Before-Angle').isEmpty()
         }
-
     }
 
     def 'path - totally different path leads to 404 without global headers' () {
+        given:
+        create {
+            setRoutes(it)
+            setHeaders(it)
+        }
 
+        expect:
+        verifyAll(get('/other')) {
+            statusCode() == 404
+            body() == 'Endpoint GET /other not found'
+            headers().firstValue('X-Always').get() == 'true'
+            headers().firstValue('X-Before-Star').isEmpty()
+            headers().firstValue('X-After-Star').isEmpty()
+            headers().firstValue('X-Before-Sub-Curly').isEmpty()
+            headers().firstValue('X-Before-Angle').isEmpty()
+        }
     }
 
 }

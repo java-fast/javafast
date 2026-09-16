@@ -66,7 +66,7 @@ class DefaultHttpExchangeHandlerSpec extends Specification implements TestUtils 
 
         then:
         exchange.statusCode == HttpStatus.NOT_FOUND.code()
-        exchange.responseText() == 'Endpoint GET /missing not found!'
+        exchange.responseText() == 'Endpoint GET /missing not found'
         exchange.closed
     }
 
