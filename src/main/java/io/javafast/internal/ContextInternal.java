@@ -38,6 +38,8 @@ class ContextInternal implements Context {
     private String result;
     private InputStream resultInputStream;
 
+    private boolean skipRemainingHandlers = false;
+
     ContextInternal(AppData appData, HttpExchange exchange) {
         this.appData = appData;
         this.exchange = exchange;
@@ -474,7 +476,12 @@ class ContextInternal implements Context {
 
     @Override
     public Context skipRemainingHandlers() {
-        return null;
+        this.skipRemainingHandlers = true;
+        return this;
+    }
+
+    boolean isSkipRemainingHandlers() {
+        return this.skipRemainingHandlers;
     }
 
     void setContextPath(String contextPath) {
@@ -498,6 +505,9 @@ class ContextInternal implements Context {
             this.headerMap.forEach(this.exchange::header);
         }
         this.exchange.status(this.statusCode);
+        if(this.method == HttpMethod.HEAD) {
+            return; // no body for HEAD
+        }
         final var stream = resultInputStream();
         try (stream; final var out = this.exchange.responseBody()) {
             stream.transferTo(out);

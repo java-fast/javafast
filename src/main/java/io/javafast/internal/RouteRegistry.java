@@ -39,7 +39,7 @@ final class RouteRegistry {
     private void add(RouteKey key, String path, Handler handler) {
         if (handler == null) throw new NullPointerException("handler");
         final RoutePattern pattern = RoutePattern.compile(path, this.ignoreTrailingSlashes, this.multipleSlashes, this.caseInsensitive);
-        final List<Route> entries = this.routes.computeIfAbsent(key, ignored -> new ArrayList<>());
+        final List<Route> entries = this.routes.computeIfAbsent(key, _ -> new ArrayList<>());
         if (key.phase() == null) {
             for (Route existing : entries) {
                 if (existing.path().equals(path)) {
@@ -49,6 +49,27 @@ final class RouteRegistry {
         }
         final Handler effective = this.wrapper == null ? handler : this.wrapper.wrap(handler);
         entries.add(new Route(key.method(), key.phase(), path, effective, pattern));
+    }
+
+    /**
+     * Replaces or adds a handler.
+     */
+    void replace(HttpMethod method, String path, Handler handler) {
+        final RouteKey key = RouteKey.http(method);
+        final List<Route> entries = this.routes.get(key);
+        if (entries == null) {
+            this.routes.computeIfAbsent(key, _ -> new ArrayList<>())
+                .add(new Route(key.method(), key.phase(), path, handler, RoutePattern.compile(path, this.ignoreTrailingSlashes, this.multipleSlashes, this.caseInsensitive)));
+            return;
+        }
+        for (int i = 0; i < entries.size(); i++) {
+            final Route route = entries.get(i);
+            if (route.path().equals(path)) {
+                entries.set(i, new Route(key.method(), key.phase(), path, handler, route.pattern()));
+                return;
+            }
+        }
+        entries.add(new Route(key.method(), key.phase(), path, handler, RoutePattern.compile(path, this.ignoreTrailingSlashes, this.multipleSlashes, this.caseInsensitive)));
     }
 
     RouteMatch findFirst(HttpMethod method, String requestPath) {
@@ -80,8 +101,19 @@ final class RouteRegistry {
         return List.copyOf(matches);
     }
 
+    /**
+     * Checks if the registry contains a route for the given method and request path without PatterMatch semantics
+     */
     boolean has(HttpMethod method, String requestPath) {
-        return findFirst(method, requestPath) != null;
+        final List<Route> entries = this.routes.get(RouteKey.http(method));
+        if (entries == null) return false;
+        for (Route existing : entries) {
+            if (existing.path().equals(requestPath)) {
+                return true;
+            }
+        }
+        return false;
     }
+
 
 }

@@ -75,6 +75,7 @@ public final class DefaultRouting implements RoutingApi {
     public boolean handleException(Context context, Throwable throwable) {
         try {
             final boolean handle = this.exceptions.handle(context, throwable);
+            if (Router.skipRemainingHandlers(context)) return handle;
             // AFTER phase should run in an exception case as well
             for (RouteMatch after : this.router.findAll(HandlerPhase.AFTER, context.path())) {
                 after.route().handler().handle(context);

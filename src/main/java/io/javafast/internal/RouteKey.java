@@ -5,6 +5,8 @@ import io.javafast.http.HttpMethod;
 
 record RouteKey(HttpMethod method, HandlerPhase phase) {
 
+    // TODO why not caching RouteKey instances?
+
     static RouteKey http(HttpMethod method) {
         return new RouteKey(method, null);
     }

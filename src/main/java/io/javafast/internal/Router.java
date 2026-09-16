@@ -29,6 +29,7 @@ final class Router {
     void handle(Context ctx) throws Exception {
         for (RouteMatch before : findAll(HandlerPhase.BEFORE, ctx.path())) {
             before.route().handler().handle(ctx);
+            if (skipRemainingHandlers(ctx)) return;
         }
 
         final RouteMatch match = find(ctx.method(), ctx.path());
@@ -36,14 +37,18 @@ final class Router {
             throw HttpResponseException.notFound(ctx.method(), ctx.path());
         }
 
-        ((ContextInternal) ctx).setPathParamMap(match.pathParams());
-
         for (RouteMatch beforeMatched : findAll(HandlerPhase.BEFORE_MATCHED, ctx.path())) {
+            ((ContextInternal) ctx).setPathParamMap(beforeMatched.pathParams());
             beforeMatched.route().handler().handle(ctx);
+            if (skipRemainingHandlers(ctx)) return;
         }
+
+        ((ContextInternal) ctx).setPathParamMap(match.pathParams());
         match.route().handler().handle(ctx);
+        if (skipRemainingHandlers(ctx)) return;
 
         for (RouteMatch afterMatched : findAll(HandlerPhase.AFTER_MATCHED, ctx.path())) {
+            ((ContextInternal) ctx).setPathParamMap(afterMatched.pathParams());
             afterMatched.route().handler().handle(ctx);
         }
 
@@ -52,12 +57,23 @@ final class Router {
         }
     }
 
+    static boolean skipRemainingHandlers(Context ctx) {
+        return ((ContextInternal)ctx).isSkipRemainingHandlers();
+    }
+
     void add(HttpMethod method, String path, Handler handler) {
+        if (method == HttpMethod.HEAD) { // explicit HEAD overrides implicit HEAD if any
+            this.registry.replace(HttpMethod.HEAD, path, handler);
+            return;
+        }
         this.registry.add(method, path, handler);
+        if (method == HttpMethod.GET && !this.registry.has(HttpMethod.HEAD, path)) { // implicit HEAD should not override explicit HEAD
+            this.registry.add(HttpMethod.HEAD, path, handler); // HEAD requests should match GET routes
+        }
     }
 
     void add(HttpMethod method, String path, Handler handler, AccessController controller) {
-        this.registry.add(method, path, handler);
+        add(method, path, handler);
         if (controller != null) { // add a preconfigured BEFORE_MATCHED to run the given AccessController
             this.registry.add(HandlerPhase.BEFORE_MATCHED, path, ctx -> {
                 if (!controller.isAllowed(ctx)) {
@@ -79,7 +95,4 @@ final class Router {
         return this.registry.findAll(phase, requestPath);
     }
 
-    boolean has(HttpMethod method, String requestPath) {
-        return this.registry.has(method, requestPath);
-    }
 }

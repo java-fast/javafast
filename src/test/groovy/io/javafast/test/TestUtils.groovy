@@ -128,4 +128,11 @@ trait TestUtils implements Logger {
         )
     }
 
+    HttpResponse<Object> head(String url, int port = 8000) {
+        return client().send(
+          HttpRequest.newBuilder(URI.create("http://localhost:${port}${url}")).HEAD().build(),
+          HttpResponse.BodyHandlers.discarding()
+        )
+    }
+
 }

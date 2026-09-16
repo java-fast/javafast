@@ -82,4 +82,61 @@ class RouterSpec extends Specification implements TestUtils {
         then:
         handlerCalled
     }
+
+    def 'HEAD requests match GET route'() {
+        given:
+        def router = new Router()
+        router.add(HttpMethod.GET, '/hello') {it.result('hello') }
+
+        expect:
+        router.find(HttpMethod.HEAD, '/hello') != null
+    }
+
+    def 'duplicate explicit HEAD mapping should override'() {
+        given:
+        def router = new Router()
+        def headContext = contextOf(HttpMethod.HEAD, '/hello')
+
+        when:
+        router.add(HttpMethod.HEAD, '/hello') { it.result('head') }
+        router.add(HttpMethod.HEAD, '/hello') { it.result('another') }
+        router.find(HttpMethod.HEAD, '/hello').route().handler().handle(headContext)
+
+        then:
+        noExceptionThrown()
+        headContext.result() == 'another'
+    }
+
+    def 'explicit HEAD mapping should override implicit HEAD mapping regardless of registration order'() {
+        given:
+        def router = new Router()
+        def headContext = contextOf(HttpMethod.HEAD, '/hello')
+        def getContext = contextOf(HttpMethod.GET, '/hello')
+
+        when: 'adding HEAD first'
+        router.add(HttpMethod.HEAD, '/hello') {it.result('head')}
+        router.add(HttpMethod.GET, '/hello') { it.result('hello') }
+        // execute handlers
+        router.find(HttpMethod.HEAD, '/hello').route().handler().handle(headContext)
+        router.find(HttpMethod.GET, '/hello').route().handler().handle(getContext)
+
+        then:
+        noExceptionThrown()
+        headContext.result() == 'head'
+        getContext.result() == 'hello'
+
+        when: 'adding GET first'
+        router = new Router()
+        router.add(HttpMethod.GET, '/hello') { it.result('hello') }
+        router.add(HttpMethod.HEAD, '/hello') { it.result('head') }
+        // execute handlers
+        router.find(HttpMethod.GET, '/hello').route().handler().handle(getContext)
+        router.find(HttpMethod.HEAD, '/hello').route().handler().handle(headContext)
+
+        then:
+        noExceptionThrown()
+        getContext.result() == 'hello'
+        headContext.result() == 'head'
+    }
+
 }

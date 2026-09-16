@@ -1,6 +1,7 @@
 package io.javafast
 
 import io.javafast.config.JavaFastConfig
+import io.javafast.http.HttpStatus
 import io.javafast.test.TestUtils
 import spock.lang.Specification
 
@@ -9,14 +10,14 @@ class BeforeAfterSpec extends Specification implements TestUtils {
     static def setRoutes(JavaFastConfig config) {
         config.routes.get('/root') { it.result('root') }
         config.routes.get('/sub/id/other/stuff') { it.result('id-other-stuff') }
-        config.routes.get('/angle/i/see/slashes') { it.result('i-see-slashes') }
+        config.routes.get('/angle/i/see/things') { it.result('i-see-things') }
     }
 
     static def setHeaders(JavaFastConfig config) {
         config.routes.before { it.header('X-Always', 'true') }
         config.routes.beforeMatched { it.header('X-Before-Star', 'true') }
         config.routes.beforeMatched('/sub/{p}*') { it.header('X-Before-Sub-Curly', it.pathParam('p')) }
-        config.routes.beforeMatched('/angle/<a>') { it.header('X-Before-Angle', it.pathParam('a')) }
+        config.routes.beforeMatched('/angle/<a>') { it.header('X-Before-Angle', it.pathParam('a')) } // angle brackets should capture path with slashes!
         config.routes.afterMatched { it.header('X-After-Star', 'true') }
     }
 
@@ -80,4 +81,115 @@ class BeforeAfterSpec extends Specification implements TestUtils {
         }
     }
 
+    def 'path - matching sub curly in beforeMatched but no matching http handler leads to 404' () {
+        given:
+        create {
+            setRoutes(it)
+            setHeaders(it)
+        }
+
+        expect:
+        verifyAll(get('/sub/id/fake')) {
+            statusCode() == 404
+            body() == 'Endpoint GET /sub/id/fake not found'
+            headers().firstValue('X-Always').get() == 'true'
+            headers().firstValue('X-Before-Star').isEmpty()
+            headers().firstValue('X-After-Star').isEmpty()
+            headers().firstValue('X-Before-Sub-Curly').isEmpty()
+            headers().firstValue('X-Before-Angle').isEmpty()
+        }
+    }
+
+    def 'path - matching angle brackets in beforeMatched but no matching http handler leads to 404' () {
+        given:
+        create {
+            setRoutes(it)
+            setHeaders(it)
+        }
+
+        expect:
+        verifyAll(get('/angle/i/see/nothing')) {
+            statusCode() == 404
+            body() == 'Endpoint GET /angle/i/see/nothing not found'
+            headers().firstValue('X-Always').get() == 'true'
+            headers().firstValue('X-Before-Star').isEmpty()
+            headers().firstValue('X-After-Star').isEmpty()
+            headers().firstValue('X-Before-Sub-Curly').isEmpty()
+            headers().firstValue('X-Before-Angle').isEmpty()
+        }
+    }
+
+    def 'path - sub curly in before matched happy path' () {
+        given:
+        create {
+            setRoutes(it)
+            setHeaders(it)
+        }
+
+        expect:
+        verifyAll(get('/sub/id/other/stuff')) {
+            statusCode() == 200
+            body() == 'id-other-stuff'
+            headers().firstValue('X-Always').get() == 'true'
+            headers().firstValue('X-Before-Star').get() == 'true'
+            headers().firstValue('X-After-Star').get() == 'true'
+            headers().firstValue('X-Before-Sub-Curly').get() == 'id'
+            headers().firstValue('X-Before-Angle').isEmpty()
+        }
+    }
+
+    def 'path - angle brackets in beforeMatched happy path' () {
+        given:
+        create {
+            setRoutes(it)
+            setHeaders(it)
+        }
+
+        expect:
+        verifyAll(get('/angle/i/see/things')) {
+            statusCode() == 200
+            body() == 'i-see-things'
+            headers().firstValue('X-Always').get() == 'true'
+            headers().firstValue('X-Before-Star').get() == 'true'
+            headers().firstValue('X-After-Star').get() == 'true'
+            headers().firstValue('X-Before-Sub-Curly').isEmpty()
+            headers().firstValue('X-Before-Angle').get() == 'i/see/things'
+        }
+    }
+
+    def 'beforeMatched can skip remaining handlers' () {
+        given:
+        create {
+            it.routes.beforeMatched {
+                it.result('skipped')
+                it.skipRemainingHandlers()
+            }
+            it.routes.get('/hello') {it.result('hello') }
+        }
+
+        expect:
+        verifyAll(get('/other-path')) {
+            statusCode() == 404
+            body() == 'Endpoint GET /other-path not found'
+        }
+        verifyAll(get('/hello')) {
+            statusCode() == 200
+            body() == 'skipped'
+        }
+    }
+
+    def 'beforeMatched fires for head request on get handler' () {
+        given:
+        create {
+            it.routes.beforeMatched { it.status(HttpStatus.IM_A_TEAPOT) }
+            it.routes.get('/hello') {it.result('hello') }
+            it.routes.afterMatched { it.result(it.result() + '!') }
+        }
+
+        expect:
+        head('/hello').statusCode() == HttpStatus.IM_A_TEAPOT.code()
+        get('/hello').statusCode() == HttpStatus.IM_A_TEAPOT.code()
+        get('/hello').body() == 'hello!'
+        get('/other').statusCode() == HttpStatus.NOT_FOUND.code()
+    }
 }
