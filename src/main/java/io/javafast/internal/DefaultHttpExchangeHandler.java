@@ -5,6 +5,9 @@ import io.javafast.http.HttpStatus;
 import io.javafast.transport.ExchangeHandler;
 import io.javafast.http.HttpExchange;
 
+import java.util.logging.Level;
+import java.util.logging.Logger;
+
 /**
  * Default http exhcange handler
  *
@@ -12,6 +15,8 @@ import io.javafast.http.HttpExchange;
  * It creates a fresh ContextInternal per request, executes the router pipeline, and flushes the response.</p>
  */
 public final class DefaultHttpExchangeHandler implements ExchangeHandler<HttpExchange> {
+
+    private static final Logger log = Logger.getLogger(DefaultHttpExchangeHandler.class.getName());
 
     private final DefaultRouting routing;
     private final AppData appData;
@@ -29,6 +34,7 @@ public final class DefaultHttpExchangeHandler implements ExchangeHandler<HttpExc
         } catch (Throwable throwable) {
             if (!this.routing.handleException(context, throwable)) {
                 context.status(HttpStatus.INTERNAL_SERVER_ERROR).result(HttpStatus.INTERNAL_SERVER_ERROR.message());
+                log.log(Level.SEVERE, throwable.getMessage(), throwable);
             }
             this.routing.handleError(context.statusCode(), context);
         }

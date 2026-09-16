@@ -14,6 +14,7 @@ import java.io.OutputStream;
 import java.lang.reflect.Type;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -384,17 +385,29 @@ class ContextInternal implements Context {
 
     @Override
     public Context header(String name, String value) {
-        return null;
+        if (this.headerMap == null) {
+            this.headerMap = new HashMap<>();
+        }
+        this.headerMap.put(name, value);
+        return this;
     }
 
     @Override
     public Context addHeader(String name, String value) {
-        return null;
+        // TODO multi-value headers?
+        if (this.headerMap == null) {
+            this.headerMap = new HashMap<>();
+        }
+        this.headerMap.put(name, value);
+        return this;
     }
 
     @Override
     public Context removeHeader(String name) {
-        return null;
+        if (this.headerMap != null) {
+            this.headerMap.remove(name);
+        }
+        return this;
     }
 
     @Override
@@ -480,6 +493,9 @@ class ContextInternal implements Context {
     void writeResponseToExchange() throws Exception {
         if (this.exchange == null) {
             return;
+        }
+        if (this.headerMap != null) { // write response headers
+            this.headerMap.forEach(this.exchange::header);
         }
         this.exchange.status(this.statusCode);
         final var stream = resultInputStream();

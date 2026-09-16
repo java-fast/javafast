@@ -27,6 +27,10 @@ final class Router {
     }
 
     void handle(Context ctx) throws Exception {
+        for (RouteMatch before : findAll(HandlerPhase.BEFORE, ctx.path())) {
+            before.route().handler().handle(ctx);
+        }
+
         final RouteMatch match = find(ctx.method(), ctx.path());
         if (match == null) {
             throw HttpResponseException.notFound(ctx.method(), ctx.path());
@@ -34,11 +38,23 @@ final class Router {
 
         ((ContextInternal) ctx).setPathParamMap(match.pathParams());
 
+        for (RouteMatch beforeMatched : findAll(HandlerPhase.BEFORE_MATCHED, ctx.path())) {
+            beforeMatched.route().handler().handle(ctx);
+        }
+
         final AccessController access = match.route().accessController();
         if (access != null && !access.isAllowed(ctx)) {
             throw new HttpResponseException(HttpStatus.FORBIDDEN);
         }
         match.route().handler().handle(ctx);
+
+        for (RouteMatch afterMatched : findAll(HandlerPhase.AFTER_MATCHED, ctx.path())) {
+            afterMatched.route().handler().handle(ctx);
+        }
+
+        for (RouteMatch after : findAll(HandlerPhase.AFTER, ctx.path())) {
+            after.route().handler().handle(ctx);
+        }
     }
 
     void add(HttpMethod method, String path, Handler handler) {
@@ -57,8 +73,8 @@ final class Router {
         return this.registry.findFirst(method, requestPath);
     }
 
-    List<RouteMatch> findAll(HttpMethod method, String requestPath) {
-        return this.registry.findAll(method, requestPath);
+    List<RouteMatch> findAll(HandlerPhase phase, String requestPath) {
+        return this.registry.findAll(phase, requestPath);
     }
 
     boolean has(HttpMethod method, String requestPath) {
