@@ -19,42 +19,46 @@ public interface RoutingApi {
 
     RoutingApi addHttpHandler(HttpMethod method, String path, Handler handler, AccessController controller);
 
+    default RoutingApi addHttpHandler(HttpMethod method, String path, Handler handler) {
+        return addHttpHandler(method, path, handler, null);
+    }
+
     RoutingApi addHandler(HandlerPhase phase, String path, Handler handler);
 
     default RoutingApi get(String path, Handler handler) {
-        return addHttpHandler(HttpMethod.GET, path, handler, null);
+        return addHttpHandler(HttpMethod.GET, path, handler);
     }
 
     default RoutingApi post(String path, Handler handler) {
-        return addHttpHandler(HttpMethod.POST, path, handler, null);
+        return addHttpHandler(HttpMethod.POST, path, handler);
     }
 
     default RoutingApi put(String path, Handler handler) {
-        return addHttpHandler(HttpMethod.PUT, path, handler, null);
+        return addHttpHandler(HttpMethod.PUT, path, handler);
     }
 
     default RoutingApi patch(String path, Handler handler) {
-        return addHttpHandler(HttpMethod.PATCH, path, handler, null);
+        return addHttpHandler(HttpMethod.PATCH, path, handler);
     }
 
     default RoutingApi delete(String path, Handler handler) {
-        return addHttpHandler(HttpMethod.DELETE, path, handler, null);
+        return addHttpHandler(HttpMethod.DELETE, path, handler);
     }
 
     default RoutingApi head(String path, Handler handler) {
-        return addHttpHandler(HttpMethod.HEAD, path, handler, null);
+        return addHttpHandler(HttpMethod.HEAD, path, handler);
     }
 
     default RoutingApi options(String path, Handler handler) {
-        return addHttpHandler(HttpMethod.OPTIONS, path, handler, null);
+        return addHttpHandler(HttpMethod.OPTIONS, path, handler);
     }
 
     default RoutingApi trace(String path, Handler handler) {
-        return addHttpHandler(HttpMethod.TRACE, path, handler, null);
+        return addHttpHandler(HttpMethod.TRACE, path, handler);
     }
 
     default RoutingApi connect(String path, Handler handler) {
-        return addHttpHandler(HttpMethod.CONNECT, path, handler, null);
+        return addHttpHandler(HttpMethod.CONNECT, path, handler);
     }
 
     default RoutingApi before(String path, Handler handler) {

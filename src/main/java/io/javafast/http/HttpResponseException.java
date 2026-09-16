@@ -6,6 +6,7 @@ import java.util.Map;
  * Exception used by handlers to terminate processing with a specific HTTP response.
  */
 public class HttpResponseException extends RuntimeException {
+
     private final HttpStatus status;
     private final Map<String, String> details;
 
@@ -24,11 +25,11 @@ public class HttpResponseException extends RuntimeException {
     }
 
     public HttpStatus status() {
-        return status;
+        return this.status;
     }
 
     public Map<String, String> details() {
-        return details;
+        return this.details;
     }
 
     public static HttpResponseException of(HttpStatus status) {
@@ -37,5 +38,9 @@ public class HttpResponseException extends RuntimeException {
 
     public static HttpResponseException of(HttpStatus status, String message) {
         return new HttpResponseException(status, message);
+    }
+
+    public static HttpResponseException notFound(HttpMethod method, String path) {
+        return new HttpResponseException(HttpStatus.NOT_FOUND, "Endpoint %s %s not found!".formatted(method, path));
     }
 }

@@ -29,7 +29,7 @@ final class Router {
     void handle(Context ctx) throws Exception {
         final RouteMatch match = find(ctx.method(), ctx.path());
         if (match == null) {
-            throw new HttpResponseException(HttpStatus.NOT_FOUND);
+            throw HttpResponseException.notFound(ctx.method(), ctx.path());
         }
 
         ((ContextInternal) ctx).setPathParamMap(match.pathParams());
