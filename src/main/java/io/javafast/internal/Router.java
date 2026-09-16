@@ -38,7 +38,9 @@ final class Router {
         }
 
         for (RouteMatch beforeMatched : findAll(HandlerPhase.BEFORE_MATCHED, ctx.path())) {
-            ((ContextInternal) ctx).setPathParamMap(beforeMatched.pathParams());
+            // if beforeMatched has no path params, we inherit route's path params instead
+            final var effective = beforeMatched.pathParams().isEmpty() ? match.pathParams() : beforeMatched.pathParams();
+            ((ContextInternal) ctx).setPathParamMap(effective);
             beforeMatched.route().handler().handle(ctx);
             if (skipRemainingHandlers(ctx)) return;
         }

@@ -192,4 +192,46 @@ class BeforeAfterSpec extends Specification implements TestUtils {
         get('/hello').body() == 'hello!'
         get('/other').statusCode() == HttpStatus.NOT_FOUND.code()
     }
+
+    def 'beforeMatched without its own path-params inherits the matched route\'s pathParams' () {
+        given:
+        create {
+            it.routes.beforeMatched { it.result(it.pathParamMap().toString() + "/") }
+            it.routes.get("/{endpoint}") { ctx -> ctx.result(ctx.result() + ctx.pathParamMap()) }
+        }
+
+        expect:
+        get('/param').body() == '[endpoint:param]/[endpoint:param]'
+    }
+
+    def 'pathParams are extracted from beforeMatched if beforeMatched has path-params' () {
+        given:
+        create {
+            it.routes.beforeMatched('/{before}') { it.result(it.pathParamMap().toString()) }
+            it.routes.get("/{endpoint}") { ctx -> ctx.result(ctx.result() + '/' + ctx.pathParamMap()) }
+        }
+
+        expect:
+        get('/param').body() == '[before:param]/[endpoint:param]'
+    }
+
+    def 'global beforeMatched sees pathParamMap from matched endpoint' () {
+        given:
+        create {
+            it.routes.beforeMatched { ctx -> ctx.result(ctx.pathParamMap().toString()) }
+            it.routes.get("/api/user/{userId}") { }
+        }
+        expect:
+        get('/api/user/user-999').body() == '[userId:user-999]'
+    }
+
+    def 'global beforeMatched can read individual pathParam from matched endpoint' () {
+        given:
+        create {
+            it.routes.beforeMatched { ctx -> ctx.result(ctx.pathParam('userId')) }
+            it.routes.get("/api/user/{userId}") { }
+        }
+        expect:
+        get('/api/user/user-999').body() == 'user-999'
+    }
 }
