@@ -3,7 +3,7 @@ package io.javafast.internal;
 import io.javafast.http.*;
 import io.javafast.router.HandlerWrapper;
 import io.javafast.router.RoutingApi;
-import io.javafast.security.AccessController;
+import io.javafast.router.AccessController;
 import io.javafast.util.Util;
 
 /**

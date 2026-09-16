@@ -2,7 +2,7 @@ package io.javafast.internal;
 
 import io.javafast.http.*;
 import io.javafast.router.HandlerWrapper;
-import io.javafast.security.AccessController;
+import io.javafast.router.AccessController;
 
 import java.util.List;
 
@@ -41,11 +41,6 @@ final class Router {
         for (RouteMatch beforeMatched : findAll(HandlerPhase.BEFORE_MATCHED, ctx.path())) {
             beforeMatched.route().handler().handle(ctx);
         }
-
-        final AccessController access = match.route().accessController();
-        if (access != null && !access.isAllowed(ctx)) {
-            throw new HttpResponseException(HttpStatus.FORBIDDEN);
-        }
         match.route().handler().handle(ctx);
 
         for (RouteMatch afterMatched : findAll(HandlerPhase.AFTER_MATCHED, ctx.path())) {
@@ -58,11 +53,18 @@ final class Router {
     }
 
     void add(HttpMethod method, String path, Handler handler) {
-        this.registry.add(method, path, handler, null);
+        this.registry.add(method, path, handler);
     }
 
     void add(HttpMethod method, String path, Handler handler, AccessController controller) {
-        this.registry.add(method, path, handler, controller);
+        this.registry.add(method, path, handler);
+        if (controller != null) { // add a preconfigured BEFORE_MATCHED to run the given AccessController
+            this.registry.add(HandlerPhase.BEFORE_MATCHED, path, ctx -> {
+                if (!controller.isAllowed(ctx)) {
+                    throw new HttpResponseException(HttpStatus.FORBIDDEN);
+                }
+            });
+        }
     }
 
     void add(HandlerPhase phase, String path, Handler handler) {

@@ -17,7 +17,8 @@ import java.util.function.Supplier
 
 trait TestUtils implements Logger {
 
-    static HttpClient client
+    static HttpClient client // shared in spec level
+    JavaFast app // shared in method level
 
     def setupSpec() {
         printMethodStart()
@@ -29,6 +30,10 @@ trait TestUtils implements Logger {
             client.close()
         }
         printMethodEnd()
+    }
+
+    def cleanup() {
+        if(app != null) app.stop()
     }
 
     static class TestExchange implements HttpExchange {
@@ -98,7 +103,7 @@ trait TestUtils implements Logger {
     }
 
     JavaFast create(int port, Supplier<Transport> transportFactory, Consumer<JavaFastConfig> config) {
-        return JavaFast.create {
+        return app = JavaFast.create {
             it.transport.factory(transportFactory)
             config.accept(it)
         }.start(port)

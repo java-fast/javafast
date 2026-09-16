@@ -6,7 +6,7 @@ import io.javafast.http.HandlerPhase;
 import io.javafast.http.HttpMethod;
 import io.javafast.internal.DefaultRouting;
 import io.javafast.router.RoutingApi;
-import io.javafast.security.AccessController;
+import io.javafast.router.AccessController;
 
 import java.util.ArrayList;
 import java.util.List;

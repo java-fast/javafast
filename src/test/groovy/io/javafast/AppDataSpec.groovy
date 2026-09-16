@@ -8,12 +8,6 @@ import spock.lang.Specification
 
 class AppDataSpec extends Specification implements TestUtils {
 
-    JavaFast app
-
-    def cleanup() {
-        if(app != null) app.stop()
-    }
-
     def 'register throws if key already exists' () {
         when:
         JavaFast.create {
@@ -40,7 +34,7 @@ class AppDataSpec extends Specification implements TestUtils {
 
     def 'data can be accessed through the Context' () {
         given:
-        app = create {
+        create {
             it.appData('answer', 42)
             it.routes.get('/', ctx -> ctx.result(ctx.appData('answer').toString()))
         }
@@ -54,7 +48,7 @@ class AppDataSpec extends Specification implements TestUtils {
 
     def 'Context#appData() throws if data does not exist' () {
         given:
-        app = create {
+        create {
             it.routes.get('/', ctx -> ctx.result(ctx.appData('missing-key').toString()))
         }
 

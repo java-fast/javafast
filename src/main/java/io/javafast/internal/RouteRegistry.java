@@ -4,7 +4,6 @@ import io.javafast.http.Handler;
 import io.javafast.http.HandlerPhase;
 import io.javafast.http.HttpMethod;
 import io.javafast.router.HandlerWrapper;
-import io.javafast.security.AccessController;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -30,18 +29,14 @@ final class RouteRegistry {
     }
 
     void add(HttpMethod method, String path, Handler handler) {
-        add(method, path, handler, null);
-    }
-
-    void add(HttpMethod method, String path, Handler handler, AccessController controller) {
-        add(RouteKey.http(method), path, handler, controller);
+        add(RouteKey.http(method), path, handler);
     }
 
     void add(HandlerPhase phase, String path, Handler handler) {
-        add(RouteKey.phase(phase), path, handler, null);
+        add(RouteKey.phase(phase), path, handler);
     }
 
-    private void add(RouteKey key, String path, Handler handler, AccessController controller) {
+    private void add(RouteKey key, String path, Handler handler) {
         if (handler == null) throw new NullPointerException("handler");
         final RoutePattern pattern = RoutePattern.compile(path, this.ignoreTrailingSlashes, this.multipleSlashes, this.caseInsensitive);
         final List<Route> entries = this.routes.computeIfAbsent(key, ignored -> new ArrayList<>());
@@ -53,19 +48,11 @@ final class RouteRegistry {
             }
         }
         final Handler effective = this.wrapper == null ? handler : this.wrapper.wrap(handler);
-        entries.add(new Route(key.method(), key.phase(), path, effective, controller, pattern));
+        entries.add(new Route(key.method(), key.phase(), path, effective, pattern));
     }
 
     RouteMatch findFirst(HttpMethod method, String requestPath) {
         return findFirst(RouteKey.http(method), requestPath);
-    }
-
-    List<RouteMatch> findAll(HttpMethod method, String requestPath) {
-        return findAll(RouteKey.http(method), requestPath);
-    }
-
-    RouteMatch findFirst(HandlerPhase phase, String requestPath) {
-        return findFirst(RouteKey.phase(phase), requestPath);
     }
 
     List<RouteMatch> findAll(HandlerPhase phase, String requestPath) {

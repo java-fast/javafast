@@ -6,12 +6,6 @@ import spock.lang.Specification
 
 class BeforeAfterSpec extends Specification implements TestUtils {
 
-    JavaFast app
-
-    def cleanup() {
-        if(app != null) app.stop()
-    }
-
     static def setRoutes(JavaFastConfig config) {
         config.routes.get('/root') { it.result('root') }
         config.routes.get('/sub/id/other/stuff') { it.result('id-other-stuff') }
@@ -28,7 +22,7 @@ class BeforeAfterSpec extends Specification implements TestUtils {
 
     def 'beforeMatched and afterMatched work' () {
         given:
-        app = create {
+        create {
             it.routes.before { it.result('ignored') }
             it.routes.beforeMatched { it.result('before-matched') }
             it.routes.get('/hello') { it.result(it.result() + '-hello') }
@@ -50,7 +44,7 @@ class BeforeAfterSpec extends Specification implements TestUtils {
 
     def 'path - perfect match' () {
         given:
-        app = create {
+        create {
             setRoutes(it)
             setHeaders(it)
         }

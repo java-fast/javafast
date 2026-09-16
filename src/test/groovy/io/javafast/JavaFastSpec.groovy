@@ -7,7 +7,7 @@ class JavaFastSpec extends Specification implements TestUtils {
 
     def 'test hello world' () {
         given:
-        def app = create {
+        create {
             it.routes.get('/', ctx -> ctx.result('Hello World'))
         }
 
@@ -16,14 +16,11 @@ class JavaFastSpec extends Specification implements TestUtils {
             statusCode() == 200
             body() == 'Hello World'
         }
-
-        cleanup:
-        app.stop()
     }
 
     def 'test hello world with contextPath' () {
         given:
-        def app = create {
+        create {
             it.router.contextPath = '/api'
             it.routes.get('/', ctx -> ctx.result('Hello World'))
         }
@@ -33,9 +30,6 @@ class JavaFastSpec extends Specification implements TestUtils {
             statusCode() == 200
             body() == 'Hello World'
         }
-
-        cleanup:
-        app.stop()
     }
 
 }

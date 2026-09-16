@@ -4,7 +4,6 @@ import io.javafast.http.ExceptionHandler;
 import io.javafast.http.Handler;
 import io.javafast.http.HandlerPhase;
 import io.javafast.http.HttpMethod;
-import io.javafast.security.AccessController;
 
 /**
  * Public routing API. The route representation and matcher remain implementation details.

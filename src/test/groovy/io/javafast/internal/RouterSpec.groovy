@@ -1,7 +1,7 @@
 package io.javafast.internal
 
 import io.javafast.http.*
-import io.javafast.security.AccessController
+import io.javafast.router.AccessController
 import io.javafast.test.TestUtils
 import spock.lang.Specification
 
