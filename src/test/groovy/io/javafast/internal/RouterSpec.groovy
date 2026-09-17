@@ -117,8 +117,8 @@ class RouterSpec extends Specification implements TestUtils {
         router.add(HttpMethod.HEAD, '/hello') {it.result('head')}
         router.add(HttpMethod.GET, '/hello') { it.result('hello') }
         // execute handlers
-        router.find(HttpMethod.HEAD, '/hello').route().handler().handle(headContext)
-        router.find(HttpMethod.GET, '/hello').route().handler().handle(getContext)
+        router.handle(headContext)
+        router.handle(getContext)
 
         then:
         noExceptionThrown()
@@ -130,8 +130,8 @@ class RouterSpec extends Specification implements TestUtils {
         router.add(HttpMethod.GET, '/hello') { it.result('hello') }
         router.add(HttpMethod.HEAD, '/hello') { it.result('head') }
         // execute handlers
-        router.find(HttpMethod.GET, '/hello').route().handler().handle(getContext)
-        router.find(HttpMethod.HEAD, '/hello').route().handler().handle(headContext)
+        router.handle(getContext)
+        router.handle(headContext)
 
         then:
         noExceptionThrown()

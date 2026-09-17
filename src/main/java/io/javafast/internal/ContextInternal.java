@@ -8,9 +8,7 @@ import io.javafast.http.HttpExchange;
 import io.javafast.validation.BodyValidator;
 import io.javafast.validation.Validator;
 
-import java.io.ByteArrayInputStream;
-import java.io.InputStream;
-import java.io.OutputStream;
+import java.io.*;
 import java.lang.reflect.Type;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
@@ -148,12 +146,17 @@ class ContextInternal implements Context {
 
     @Override
     public String body() {
-        return "";
+        return new String(bodyAsBytes(), StandardCharsets.UTF_8);
     }
 
     @Override
     public byte[] bodyAsBytes() {
-        return new byte[0];
+        // TODO optimize later via reusing a buffer byte[]
+        try (final var in = this.exchange.requestBody()){
+            return in.readAllBytes();
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
+        }
     }
 
     @Override

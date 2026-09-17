@@ -135,4 +135,11 @@ trait TestUtils implements Logger {
         )
     }
 
+    HttpResponse<String> post(String url, String body, int port = 8000) {
+        return client().send(
+          HttpRequest.newBuilder(URI.create("http://localhost:${port}${url}")).POST(HttpRequest.BodyPublishers.ofString(body)).build(),
+          HttpResponse.BodyHandlers.ofString()
+        )
+    }
+
 }
