@@ -2,6 +2,7 @@ plugins {
     id 'java'
     id 'groovy'
     id 'jacoco'
+    id 'me.champeau.jmh' version '0.7.3'
 }
 
 group = 'io.javafast.core'
@@ -17,6 +18,14 @@ dependencies {
     testImplementation 'org.spockframework:spock-core:2.4-groovy-5.0'
     testImplementation 'net.bytebuddy:byte-buddy:1.18.13'
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+jmh {
+    warmupIterations = 1
+    iterations = 1
+    fork = 1
+    resultFormat = 'JSON'
+    profilers = ['gc']
 }
 
 test {
