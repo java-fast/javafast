@@ -50,7 +50,9 @@ final class Router {
         if (skipRemainingHandlers(ctx)) return;
 
         for (RouteMatch afterMatched : findAll(HandlerPhase.AFTER_MATCHED, ctx.path())) {
-            ((ContextInternal) ctx).setPathParamMap(afterMatched.pathParams());
+            // if afterMatched has no path params, we inherit route's path params instead
+            final var effective = afterMatched.pathParams().isEmpty() ? match.pathParams() : afterMatched.pathParams();
+            ((ContextInternal) ctx).setPathParamMap(effective);
             afterMatched.route().handler().handle(ctx);
         }
 

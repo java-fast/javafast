@@ -98,7 +98,7 @@ final class RouteRegistry {
             final PatternMatch match = route.pattern().match(requestPath);
             if (match != null) matches.add(new RouteMatch(route, match.pathParams()));
         }
-        return List.copyOf(matches);
+        return matches;
     }
 
     /**

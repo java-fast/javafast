@@ -234,4 +234,15 @@ class BeforeAfterSpec extends Specification implements TestUtils {
         expect:
         get('/api/user/user-999').body() == 'user-999'
     }
+
+    def 'afterMatched without its own path-params inherits the matched route\'s pathParams' () {
+        given:
+        create {
+            it.routes.afterMatched { it.result(it.result() + '/' + it.pathParamMap().toString()) }
+            it.routes.get("/{endpoint}") { it.result(it.pathParamMap().toString()) }
+        }
+
+        expect:
+        get('/param').body() == '[endpoint:param]/[endpoint:param]'
+    }
 }
