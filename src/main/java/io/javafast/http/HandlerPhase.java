@@ -7,5 +7,10 @@ public enum HandlerPhase {
     BEFORE,
     BEFORE_MATCHED,
     AFTER_MATCHED,
-    AFTER
+    AFTER;
+
+    public int key() {
+        return this.ordinal() + HttpMethod.MAX_COUNT;
+    }
+
 }

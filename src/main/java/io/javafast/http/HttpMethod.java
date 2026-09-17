@@ -8,7 +8,9 @@ import java.util.concurrent.atomic.AtomicInteger;
 /**
  * HTTP method name. Supports standard and custom methods.
  */
-public record HttpMethod(int index, String name) {
+public record HttpMethod(int key, String name) {
+
+    static final int MAX_COUNT = Integer.getInteger("javafast.http.methods.max.count", 16);
 
     private static final AtomicInteger incrementer = new AtomicInteger();
     private static final Map<String, HttpMethod> CACHE = new ConcurrentHashMap<>();
@@ -24,6 +26,7 @@ public record HttpMethod(int index, String name) {
     public static final HttpMethod CONNECT = of("CONNECT");
 
     public HttpMethod {
+        if (key > MAX_COUNT) throw new IllegalArgumentException("HTTP method index must not be greater than " + MAX_COUNT);
         if (name == null || name.isEmpty()) throw new IllegalArgumentException("HTTP method must not be empty");
         for (int i = 0; i < name.length(); i++) {
             char c = name.charAt(i);
