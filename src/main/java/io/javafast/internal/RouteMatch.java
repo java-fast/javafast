@@ -1,10 +1,23 @@
 package io.javafast.internal;
 
-import java.util.Map;
-
 /**
  * Match result consumed by the core runtime
  */
-record RouteMatch(Route route, Map<String, String> pathParams) {
+final class RouteMatch {
+
+    private Route route;
+    private final PathParams pathParams = new PathParams();
+
+    public void setRoute(Route route) {
+        this.route = route;
+    }
+
+    public Route route() {
+        return this.route;
+    }
+
+    public PathParams pathParams() {
+        return this.pathParams;
+    }
 
 }

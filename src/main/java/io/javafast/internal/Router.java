@@ -12,57 +12,69 @@ import java.util.List;
 final class Router {
 
     private final RouteRegistry registry;
+    private final RouterState routerState;
 
     Router() {
         this(false, false, false, null);
     }
 
-    Router(boolean ignoreTrailingSlashes, boolean multipleSlashes,
-                  boolean caseInsensitive, HandlerWrapper wrapper) {
+    Router(boolean ignoreTrailingSlashes, boolean multipleSlashes, boolean caseInsensitive, HandlerWrapper wrapper) {
         this(new RouteRegistry(ignoreTrailingSlashes, multipleSlashes, caseInsensitive, wrapper));
     }
 
     Router(RouteRegistry registry) {
         this.registry = registry;
+        this.routerState = new RouterState();
     }
 
     void handle(Context ctx) throws Exception {
-        for (RouteMatch before : findAll(HandlerPhase.BEFORE, ctx.path())) {
-            before.route().handler().handle(ctx);
-            if (skipRemainingHandlers(ctx)) return;
-        }
+
+        this.registry.findAll(this.routerState, HandlerPhase.BEFORE, ctx.path(), m -> {
+            m.route().handler().handle(ctx);
+            throwIfHandlersSkipped(ctx);
+        });
 
         final RouteMatch match = find(ctx.method(), ctx.path());
         if (match == null) {
             throw HttpResponseException.notFound(ctx.method(), ctx.path());
         }
 
-        for (RouteMatch beforeMatched : findAll(HandlerPhase.BEFORE_MATCHED, ctx.path())) {
+        this.registry.findAll(this.routerState, HandlerPhase.BEFORE_MATCHED, ctx.path(), m -> {
             // if beforeMatched has no path params, we inherit route's path params instead
-            final var effective = beforeMatched.pathParams().isEmpty() ? match.pathParams() : beforeMatched.pathParams();
+            final var effective = m.pathParams().isEmpty() ? match.pathParams() : m.pathParams();
             ((ContextInternal) ctx).setPathParamMap(effective);
-            beforeMatched.route().handler().handle(ctx);
-            if (skipRemainingHandlers(ctx)) return;
-        }
+            m.route().handler().handle(ctx);
+            throwIfHandlersSkipped(ctx);
+        });
 
         ((ContextInternal) ctx).setPathParamMap(match.pathParams());
         match.route().handler().handle(ctx);
         if (skipRemainingHandlers(ctx)) return;
 
-        for (RouteMatch afterMatched : findAll(HandlerPhase.AFTER_MATCHED, ctx.path())) {
+        this.registry.findAll(this.routerState, HandlerPhase.AFTER_MATCHED, ctx.path(), m -> {
             // if afterMatched has no path params, we inherit route's path params instead
-            final var effective = afterMatched.pathParams().isEmpty() ? match.pathParams() : afterMatched.pathParams();
+            final var effective = m.pathParams().isEmpty() ? match.pathParams() : m.pathParams();
             ((ContextInternal) ctx).setPathParamMap(effective);
-            afterMatched.route().handler().handle(ctx);
-        }
+            m.route().handler().handle(ctx);
+            throwIfHandlersSkipped(ctx);
+        });
 
-        for (RouteMatch after : findAll(HandlerPhase.AFTER, ctx.path())) {
-            after.route().handler().handle(ctx);
-        }
+        handleAfter(ctx);
     }
 
-    static boolean skipRemainingHandlers(Context ctx) {
+    void handleAfter(Context ctx) throws Exception {
+        this.registry.findAll(this.routerState, HandlerPhase.AFTER, ctx.path(), m -> {
+            m.route().handler().handle(ctx);
+            throwIfHandlersSkipped(ctx);
+        });
+    }
+
+    private static boolean skipRemainingHandlers(Context ctx) {
         return ((ContextInternal)ctx).isSkipRemainingHandlers();
+    }
+
+    private static void throwIfHandlersSkipped(Context ctx) {
+        if (skipRemainingHandlers(ctx)) throw SkipHandlersException.get();
     }
 
     void add(HttpMethod method, String path, Handler handler) {
@@ -92,11 +104,7 @@ final class Router {
     }
 
     RouteMatch find(HttpMethod method, String requestPath) {
-        return this.registry.findFirst(method, requestPath);
-    }
-
-    List<RouteMatch> findAll(HandlerPhase phase, String requestPath) {
-        return this.registry.findAll(phase, requestPath);
+        return this.registry.findFirst(this.routerState, method, requestPath);
     }
 
 }

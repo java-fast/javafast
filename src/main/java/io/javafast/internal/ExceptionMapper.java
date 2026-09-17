@@ -20,6 +20,9 @@ final class ExceptionMapper {
             context.status(exception.status());
             if (exception.getMessage() != null) context.result(exception.getMessage());
         });
+        add(SkipHandlersException.class, (SkipHandlersException _, Context _) -> {
+            // do nothing
+        });
     }
 
     <E extends Exception> void add(Class<E> type, ExceptionHandler<? super E> handler) {

@@ -7,6 +7,4 @@ import java.util.HashMap;
  */
 class PathParams extends HashMap<String, String> {
 
-    static final PathParams EMPTY = new PathParams();
-
 }

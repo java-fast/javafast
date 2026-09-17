@@ -18,6 +18,9 @@ final class RoutePattern {
     private final boolean multipleSlashes;
     private final boolean caseInsensitive;
 
+    // must be thread-confined, not thread-safe
+    private final List<String> pathSplits = new ArrayList<>();
+
     private RoutePattern(String rawPath,
                          List<Segment> segments,
                          boolean wildcard,
@@ -50,18 +53,18 @@ final class RoutePattern {
         return new RoutePattern(rawPath, segments, wildcard, trailingWildcard, ignoreTrailingSlash, multipleSlashes, caseInsensitive);
     }
 
-    PathParams match(String requestPath) {
-        if (this.wildcard) return PathParams.EMPTY;
+    PathParams match(PathParams params, String requestPath) {
+        params.clear();
+        if (this.wildcard) return params;
         final List<String> input = split(requestPath);
 
         int routeIndex = 0;
         int inputIndex = 0;
-        PathParams params = null;
 
         while (routeIndex < this.segments.size()) {
             final Segment segment = this.segments.get(routeIndex);
             if (segment instanceof WildcardSegment) {
-                return PathParams.EMPTY;
+                return params;
             }
 
             if (inputIndex >= input.size()) {
@@ -69,7 +72,6 @@ final class RoutePattern {
             }
 
             if (segment instanceof ParameterSegment(String name, boolean acceptsSlash) && acceptsSlash) {
-                if (params == null) params = new PathParams();
                 params.put(name, decode(joinRemaining(input, inputIndex)));
                 inputIndex = input.size();
                 routeIndex++;
@@ -80,17 +82,15 @@ final class RoutePattern {
             final String captured = segment.match(value, this.caseInsensitive);
             if (captured == null) return null;
             if (segment instanceof ParameterSegment p) {
-                if (params == null) params = new PathParams();
                 params.put(p.name, decode(captured));
             } else if (segment instanceof CompositeSegment c) {
-                if (params == null) params = new PathParams();
                 c.capture(value, params);
             }
             routeIndex++;
         }
 
         if (this.trailingWildcard) {
-            return routeIndex == this.segments.size() ? paramsOrEmpty(params) : null;
+            return routeIndex == this.segments.size() ? params : null;
         }
 
         if (inputIndex != input.size()) return null;
@@ -101,7 +101,7 @@ final class RoutePattern {
             return null;
         }
 
-        return paramsOrEmpty(params);
+        return params;
     }
 
     private boolean sameTrailingSlash(String route, String request) {
@@ -110,27 +110,23 @@ final class RoutePattern {
     }
 
     private List<String> split(String path) {
-        final List<String> result = new ArrayList<>();
+        this.pathSplits.clear();
         int start = 0;
         for (int i = 0; i <= path.length(); i++) {
             if (i == path.length() || path.charAt(i) == '/') {
-                if (i > start) result.add(path.substring(start, i));
+                if (i > start) this.pathSplits.add(path.substring(start, i));
                 else if (!this.multipleSlashes && i < path.length() && i == start && start > 0) {
-                    result.add(""); // empty path segments are meaningful when multiple slashes are not collapsed
+                    this.pathSplits.add(""); // empty path segments are meaningful when multiple slashes are not collapsed
                 }
                 start = i + 1;
             }
         }
-        if (!result.isEmpty() && result.getLast().isEmpty()) result.removeLast();
-        return result;
+        if (!this.pathSplits.isEmpty() && this.pathSplits.getLast().isEmpty()) this.pathSplits.removeLast();
+        return this.pathSplits;
     }
 
     private static String joinRemaining(List<String> input, int start) {
         return String.join("/", input.subList(start, input.size()));
-    }
-
-    private static PathParams paramsOrEmpty(PathParams params) {
-        return params == null ? PathParams.EMPTY : params;
     }
 
     private static String decode(String value) {

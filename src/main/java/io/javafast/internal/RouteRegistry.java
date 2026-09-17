@@ -4,6 +4,7 @@ import io.javafast.http.Handler;
 import io.javafast.http.HandlerPhase;
 import io.javafast.http.HttpMethod;
 import io.javafast.router.HandlerWrapper;
+import io.javafast.util.function.ThrowingConsumer;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -81,33 +82,29 @@ final class RouteRegistry {
         entries.add(new Route(method, null, path, handler, RoutePattern.compile(path, this.ignoreTrailingSlashes, this.multipleSlashes, this.caseInsensitive)));
     }
 
-    RouteMatch findFirst(HttpMethod method, String requestPath) {
-        return findFirst(method.key(), requestPath);
-    }
-
-    List<RouteMatch> findAll(HandlerPhase phase, String requestPath) {
-        return findAll(phase.key(), requestPath);
-    }
-
-    private RouteMatch findFirst(int key, String requestPath) {
-        final List<Route> entries = this.routes[key];
+    RouteMatch findFirst(RouterState state, HttpMethod method, String requestPath) {
+        final List<Route> entries = this.routes[method.key()];
         if (entries == null) return null;
         for (Route route : entries) {
-            final PathParams match = route.pattern().match(requestPath);
-            if (match != null) return new RouteMatch(route, match);
+            final PathParams match = route.pattern().match(state.routeMatch.pathParams(), requestPath);
+            if (match != null) {
+                state.routeMatch.setRoute(route);
+                return state.routeMatch;
+            };
         }
         return null;
     }
 
-    private List<RouteMatch> findAll(int key, String requestPath) {
-        final List<Route> entries = this.routes[key];
-        if (entries == null) return List.of();
-        final List<RouteMatch> matches = new ArrayList<>();
+    void findAll(RouterState state, HandlerPhase phase, String requestPath, ThrowingConsumer<RouteMatch> consumer) throws Exception {
+        final List<Route> entries = this.routes[phase.key()];
+        if (entries == null) return;
         for (Route route : entries) {
-            final PathParams match = route.pattern().match(requestPath);
-            if (match != null) matches.add(new RouteMatch(route, match));
+            final PathParams match = route.pattern().match(state.phaseMatch.pathParams(), requestPath);
+            if (match != null) {
+                state.phaseMatch.setRoute(route);
+                consumer.accept(state.phaseMatch);
+            }
         }
-        return matches;
     }
 
     /**
