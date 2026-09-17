@@ -1,4 +1,4 @@
-# JavaFast – A lightweight and fast web framework for Java
+# JavaFast – Allocation-conscious, synchronous-looking but asynchronous/efficient HTTP framework in Modern Java/JVM
 
 ## Coming from Javalin?
 
