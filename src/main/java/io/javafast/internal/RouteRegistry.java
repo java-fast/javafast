@@ -84,8 +84,8 @@ final class RouteRegistry {
         final List<Route> entries = this.routes.get(key);
         if (entries == null) return null;
         for (Route route : entries) {
-            final PatternMatch match = route.pattern().match(requestPath);
-            if (match != null) return new RouteMatch(route, match.pathParams());
+            final PathParams match = route.pattern().match(requestPath);
+            if (match != null) return new RouteMatch(route, match);
         }
         return null;
     }
@@ -95,8 +95,8 @@ final class RouteRegistry {
         if (entries == null) return List.of();
         final List<RouteMatch> matches = new ArrayList<>();
         for (Route route : entries) {
-            final PatternMatch match = route.pattern().match(requestPath);
-            if (match != null) matches.add(new RouteMatch(route, match.pathParams()));
+            final PathParams match = route.pattern().match(requestPath);
+            if (match != null) matches.add(new RouteMatch(route, match));
         }
         return matches;
     }
@@ -114,6 +114,5 @@ final class RouteRegistry {
         }
         return false;
     }
-
 
 }

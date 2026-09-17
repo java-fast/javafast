@@ -21,11 +21,12 @@ dependencies {
 }
 
 jmh {
-    warmupIterations = 1
-    iterations = 1
+    warmupIterations = 2
+    iterations = 5
     fork = 1
     resultFormat = 'JSON'
     profilers = ['gc']
+    jvmArgsAppend = ['-XX:+UseG1GC']
 }
 
 test {

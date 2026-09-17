@@ -23,7 +23,7 @@ class RouterPatternSpec extends Specification {
 
         then:
         match != null
-        match.pathParams().get("id") == "123"
+        match.get("id") == "123"
     }
 
     def "should capture slash parameter"() {
@@ -35,7 +35,7 @@ class RouterPatternSpec extends Specification {
 
         then:
         match != null
-        match.pathParams().get("path") == "a/b/c"
+        match.get("path") == "a/b/c"
     }
 
     def "should match global wildcard"() {
@@ -81,7 +81,7 @@ class RouterPatternSpec extends Specification {
 
         then:
         match != null
-        match.pathParams().get("name") == "report"
+        match.get("name") == "report"
     }
 
 }

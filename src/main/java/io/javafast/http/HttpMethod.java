@@ -3,12 +3,14 @@ package io.javafast.http;
 import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * HTTP method name. Supports standard and custom methods.
  */
-public record HttpMethod(String name) {
+public record HttpMethod(int index, String name) {
 
+    private static final AtomicInteger incrementer = new AtomicInteger();
     private static final Map<String, HttpMethod> CACHE = new ConcurrentHashMap<>();
 
     public static final HttpMethod GET = of("GET");
@@ -30,7 +32,7 @@ public record HttpMethod(String name) {
     }
 
     public static HttpMethod of(String name) {
-        return CACHE.computeIfAbsent(name.toUpperCase(Locale.ROOT), HttpMethod::new);
+        return CACHE.computeIfAbsent(name.toUpperCase(Locale.ROOT), s -> new HttpMethod(incrementer.getAndIncrement(), s));
     }
 
     @Override

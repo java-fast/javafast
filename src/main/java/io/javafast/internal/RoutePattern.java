@@ -50,18 +50,18 @@ final class RoutePattern {
         return new RoutePattern(rawPath, segments, wildcard, trailingWildcard, ignoreTrailingSlash, multipleSlashes, caseInsensitive);
     }
 
-    PatternMatch match(String requestPath) {
-        if (this.wildcard) return PatternMatch.EMPTY;
+    PathParams match(String requestPath) {
+        if (this.wildcard) return PathParams.EMPTY;
         final List<String> input = split(requestPath);
 
         int routeIndex = 0;
         int inputIndex = 0;
-        Map<String, String> params = null;
+        PathParams params = null;
 
         while (routeIndex < this.segments.size()) {
             final Segment segment = this.segments.get(routeIndex);
             if (segment instanceof WildcardSegment) {
-                return PatternMatch.EMPTY;
+                return PathParams.EMPTY;
             }
 
             if (inputIndex >= input.size()) {
@@ -69,7 +69,7 @@ final class RoutePattern {
             }
 
             if (segment instanceof ParameterSegment(String name, boolean acceptsSlash) && acceptsSlash) {
-                if (params == null) params = new HashMap<>();
+                if (params == null) params = new PathParams();
                 params.put(name, decode(joinRemaining(input, inputIndex)));
                 inputIndex = input.size();
                 routeIndex++;
@@ -80,17 +80,17 @@ final class RoutePattern {
             final String captured = segment.match(value, this.caseInsensitive);
             if (captured == null) return null;
             if (segment instanceof ParameterSegment p) {
-                if (params == null) params = new HashMap<>();
+                if (params == null) params = new PathParams();
                 params.put(p.name, decode(captured));
             } else if (segment instanceof CompositeSegment c) {
-                if (params == null) params = new HashMap<>();
+                if (params == null) params = new PathParams();
                 c.capture(value, params);
             }
             routeIndex++;
         }
 
         if (this.trailingWildcard) {
-            return routeIndex == this.segments.size() ? new PatternMatch(paramsOrEmpty(params)) : null;
+            return routeIndex == this.segments.size() ? paramsOrEmpty(params) : null;
         }
 
         if (inputIndex != input.size()) return null;
@@ -101,7 +101,7 @@ final class RoutePattern {
             return null;
         }
 
-        return new PatternMatch(paramsOrEmpty(params));
+        return paramsOrEmpty(params);
     }
 
     private boolean sameTrailingSlash(String route, String request) {
@@ -129,8 +129,8 @@ final class RoutePattern {
         return String.join("/", input.subList(start, input.size()));
     }
 
-    private static Map<String, String> paramsOrEmpty(Map<String, String> params) {
-        return params == null ? Collections.emptyMap() : params;
+    private static PathParams paramsOrEmpty(PathParams params) {
+        return params == null ? PathParams.EMPTY : params;
     }
 
     private static String decode(String value) {

@@ -3,26 +3,28 @@ package io.javafast.internal;
 import io.javafast.http.HttpMethod;
 import org.openjdk.jmh.annotations.*;
 
+import java.util.concurrent.TimeUnit;
 
-// Benchmark                                                        Mode  Cnt          Score   Error   Units
-// RouterMatchBenchmark.nestedParamRouteMatch                      thrpt         7378160.265           ops/s
-// RouterMatchBenchmark.nestedParamRouteMatch:·gc.alloc.rate       thrpt            7092.555          MB/sec
-// RouterMatchBenchmark.nestedParamRouteMatch:·gc.alloc.rate.norm  thrpt            1008.000            B/op
-// RouterMatchBenchmark.nestedParamRouteMatch:·gc.count            thrpt             266.000          counts
-// RouterMatchBenchmark.nestedParamRouteMatch:·gc.time             thrpt              70.000              ms
 
-// RouterMatchBenchmark.paramRouteMatch                            thrpt        29794085.112           ops/s
-// RouterMatchBenchmark.paramRouteMatch:·gc.alloc.rate             thrpt           14547.707          MB/sec
-// RouterMatchBenchmark.paramRouteMatch:·gc.alloc.rate.norm        thrpt             512.000            B/op
-// RouterMatchBenchmark.paramRouteMatch:·gc.count                  thrpt             453.000          counts
-// RouterMatchBenchmark.paramRouteMatch:·gc.time                   thrpt             123.000              ms
-
-// RouterMatchBenchmark.staticRouteMatch                           thrpt       122453461.318           ops/s
-// RouterMatchBenchmark.staticRouteMatch:·gc.alloc.rate            thrpt            5620.750          MB/sec
-// RouterMatchBenchmark.staticRouteMatch:·gc.alloc.rate.norm       thrpt              48.132            B/op
-// RouterMatchBenchmark.staticRouteMatch:·gc.count                 thrpt             210.000          counts
-// RouterMatchBenchmark.staticRouteMatch:·gc.time                  thrpt              56.000              ms
+//Benchmark                                                       Mode  Cnt     Score   Error   Units
+//RouterMatchBenchmark.nestedParamRouteMatch                      avgt        157.288           ns/op
+//RouterMatchBenchmark.nestedParamRouteMatch:·gc.alloc.rate       avgt       6645.218          MB/sec
+//RouterMatchBenchmark.nestedParamRouteMatch:·gc.alloc.rate.norm  avgt       1096.000            B/op
+//RouterMatchBenchmark.nestedParamRouteMatch:·gc.count            avgt        250.000          counts
+//RouterMatchBenchmark.nestedParamRouteMatch:·gc.time             avgt         80.000              ms
+//RouterMatchBenchmark.paramRouteMatch                            avgt         70.126           ns/op
+//RouterMatchBenchmark.paramRouteMatch:·gc.alloc.rate             avgt       7180.342          MB/sec
+//RouterMatchBenchmark.paramRouteMatch:·gc.alloc.rate.norm        avgt        528.000            B/op
+//RouterMatchBenchmark.paramRouteMatch:·gc.count                  avgt        266.000          counts
+//RouterMatchBenchmark.paramRouteMatch:·gc.time                   avgt         82.000              ms
+//RouterMatchBenchmark.staticRouteMatch                           avgt         20.224           ns/op
+//RouterMatchBenchmark.staticRouteMatch:·gc.alloc.rate            avgt       6790.237          MB/sec
+//RouterMatchBenchmark.staticRouteMatch:·gc.alloc.rate.norm       avgt        144.000            B/op
+//RouterMatchBenchmark.staticRouteMatch:·gc.count                 avgt        254.000          counts
+//RouterMatchBenchmark.staticRouteMatch:·gc.time                  avgt         78.000              ms
 @State(Scope.Benchmark)
+@BenchmarkMode(Mode.AverageTime)
+@OutputTimeUnit(TimeUnit.NANOSECONDS)
 public class RouterMatchBenchmark {
 
     private Router router;
