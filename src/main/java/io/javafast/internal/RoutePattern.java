@@ -18,9 +18,6 @@ final class RoutePattern {
     private final boolean multipleSlashes;
     private final boolean caseInsensitive;
 
-    // must be thread-confined, not thread-safe
-    private final List<String> pathSplits = new ArrayList<>();
-
     private RoutePattern(String rawPath,
                          List<Segment> segments,
                          boolean wildcard,
@@ -53,47 +50,48 @@ final class RoutePattern {
         return new RoutePattern(rawPath, segments, wildcard, trailingWildcard, ignoreTrailingSlash, multipleSlashes, caseInsensitive);
     }
 
-    PathParams match(PathParams params, String requestPath) {
-        params.clear();
-        if (this.wildcard) return params;
-        final List<String> input = split(requestPath);
+    PathParams match(PatternMatch state, String requestPath) {
+        state.reset(requestPath);
+        if (this.wildcard) return state.params;
+        final int count = split(state.splits, requestPath);
 
         int routeIndex = 0;
-        int inputIndex = 0;
+        int splitIndex = 0;
 
         while (routeIndex < this.segments.size()) {
             final Segment segment = this.segments.get(routeIndex);
             if (segment instanceof WildcardSegment) {
-                return params;
+                return state.params;
             }
 
-            if (inputIndex >= input.size()) {
+            if (splitIndex >= count) {
                 return null;
             }
 
             if (segment instanceof ParameterSegment(String name, boolean acceptsSlash) && acceptsSlash) {
-                params.put(name, decode(joinRemaining(input, inputIndex)));
-                inputIndex = input.size();
+                final PathSplits.JoinSplit join = state.splits.join(splitIndex);
+                state.params.add(name, join.start, join.length);
+                splitIndex = count;
                 routeIndex++;
                 break;
             }
 
-            final String value = input.get(inputIndex++);
-            final String captured = segment.match(value, this.caseInsensitive);
-            if (captured == null) return null;
+            final PathSplits.PathSplit split = state.splits.split(splitIndex++); // cannot be null: splitIndex >=0 && splitIndex < count
+            if (!segment.match(split, this.caseInsensitive)) return null;
             if (segment instanceof ParameterSegment p) {
-                params.put(p.name, decode(captured));
+                state.params.add(p.name, split.start, split.length);
             } else if (segment instanceof CompositeSegment c) {
-                c.capture(value, params);
+                // TODO zero-allocation capture?
+                c.capture(split.get(), state.params);
             }
             routeIndex++;
         }
 
         if (this.trailingWildcard) {
-            return routeIndex == this.segments.size() ? params : null;
+            return routeIndex == this.segments.size() ? state.params : null;
         }
 
-        if (inputIndex != input.size()) return null;
+        if (splitIndex != count) return null;
 
         // The route compiler removes empty segments, so /foo and /foo/ are equivalent
         // only when the configuration says trailing slashes may be ignored.
@@ -101,7 +99,7 @@ final class RoutePattern {
             return null;
         }
 
-        return params;
+        return state.params;
     }
 
     private boolean sameTrailingSlash(String route, String request) {
@@ -109,24 +107,20 @@ final class RoutePattern {
         return route.endsWith("/") == request.endsWith("/");
     }
 
-    private List<String> split(String path) {
-        this.pathSplits.clear();
+    private int split(PathSplits state, String path) {
+        int count = 0;
         int start = 0;
         for (int i = 0; i <= path.length(); i++) {
             if (i == path.length() || path.charAt(i) == '/') {
-                if (i > start) this.pathSplits.add(path.substring(start, i));
+                if (i > start) state.set(count++, start, i - start);
                 else if (!this.multipleSlashes && i < path.length() && i == start && start > 0) {
-                    this.pathSplits.add(""); // empty path segments are meaningful when multiple slashes are not collapsed
+                    state.set(count++, start, 0); // empty path segments are meaningful when multiple slashes are not collapsed
                 }
                 start = i + 1;
             }
         }
-        if (!this.pathSplits.isEmpty() && this.pathSplits.getLast().isEmpty()) this.pathSplits.removeLast();
-        return this.pathSplits;
-    }
-
-    private static String joinRemaining(List<String> input, int start) {
-        return String.join("/", input.subList(start, input.size()));
+        if (count > 0 && state.split(count - 1).empty()) --count; // is the last input empty string?
+        return count;
     }
 
     private static String decode(String value) {
@@ -208,6 +202,8 @@ final class RoutePattern {
 
     private interface Segment {
         String match(String value, boolean caseInsensitive);
+
+        boolean match(PathSplits.PathSplit split, boolean caseInsensitive);
     }
 
     private record LiteralSegment(String value) implements Segment {
@@ -215,12 +211,22 @@ final class RoutePattern {
         public String match(String input, boolean ci) {
             return ci ? this.value.equalsIgnoreCase(input) ? input : null : this.value.equals(input) ? input : null;
         }
+
+        @Override
+        public boolean match(PathSplits.PathSplit split, boolean caseInsensitive) {
+            return split.match(this.value, caseInsensitive);
+        }
     }
 
     private record ParameterSegment(String name, boolean acceptsSlash) implements Segment {
         @Override
         public String match(String value, boolean ci) {
             return value;
+        }
+
+        @Override
+        public boolean match(PathSplits.PathSplit split, boolean caseInsensitive) {
+            return true;
         }
     }
 
@@ -248,6 +254,11 @@ final class RoutePattern {
             return pos == input.length() ? input : null;
         }
 
+        @Override
+        public boolean match(PathSplits.PathSplit split, boolean caseInsensitive) {
+            return false;
+        }
+
         void capture(String input, Map<String, String> out) {
             int pos = 0;
             for (int i = 0; i < this.parts.size(); i++) {
@@ -255,7 +266,7 @@ final class RoutePattern {
                 if (part instanceof TextPart(String value)) pos += value.length();
                 else if (part instanceof ParamPart p) {
                     final int end = nextTextStart(this.parts, i + 1, input, pos, false);
-                    out.put(p.name, decode(input.substring(pos, end)));
+                    out.put(p.name, decode(input.substring(pos, end))); // FIXME allocation!
                     pos = end;
                 }
             }
@@ -285,6 +296,11 @@ final class RoutePattern {
         @Override
         public String match(String value, boolean ci) {
             return value;
+        }
+
+        @Override
+        public boolean match(PathSplits.PathSplit split, boolean caseInsensitive) {
+            return true;
         }
     }
 }

@@ -16,8 +16,8 @@ class RouterPatternSpec extends Specification {
         def pattern = RoutePattern.compile("/users", false, false, false)
 
         expect:
-        pattern.match(state.pathParams(), "/users") != null
-        pattern.match(state.pathParams(), "/users/1") == null
+        pattern.match(state.patternMatch, "/users") != null
+        pattern.match(state.patternMatch, "/users/1") == null
     }
 
     def "should capture single path parameter"() {
@@ -25,11 +25,26 @@ class RouterPatternSpec extends Specification {
         def pattern = RoutePattern.compile("/users/{id}", false, false, false)
 
         when:
-        def match = pattern.match(state.pathParams(), "/users/123")
+        def match = pattern.match(state.patternMatch, "/users/123")
 
         then:
         match != null
         match.get("id") == "123"
+    }
+
+    def "should capture nested path parameters"() {
+        given:
+        def pattern = RoutePattern.compile("/users/{id}/groups/{gid}/roles/{rid}", false, false, false)
+
+        when:
+        def match = pattern.match(state.patternMatch, "/users/123/groups/9876/roles/xx")
+
+        then:
+        match != null
+        match.get("id") == "123"
+        match.get("gid") == "9876"
+        match.get("rid") == "xx"
+        match.get() == ["id":"123", "gid":"9876", "rid":"xx"]
     }
 
     def "should capture slash parameter"() {
@@ -37,7 +52,7 @@ class RouterPatternSpec extends Specification {
         def pattern = RoutePattern.compile("/files/<path>", false, false, false)
 
         when:
-        def match = pattern.match(state.pathParams(), "/files/a/b/c")
+        def match = pattern.match(state.patternMatch, "/files/a/b/c")
 
         then:
         match != null
@@ -49,7 +64,7 @@ class RouterPatternSpec extends Specification {
         def pattern = RoutePattern.compile("*", false, false, false)
 
         expect:
-        pattern.match(state.pathParams(), "/anything/here") != null
+        pattern.match(state.patternMatch, "/anything/here") != null
     }
 
     def "should match trailing wildcard under api path"() {
@@ -57,9 +72,9 @@ class RouterPatternSpec extends Specification {
         def pattern = RoutePattern.compile("/api/<path>*", false, false, false)
 
         expect:
-        pattern.match(state.pathParams(), "/api/x") != null
-        pattern.match(state.pathParams(), "/api/v1/users") != null
-        pattern.match(state.pathParams(), "/apix") == null
+        pattern.match(state.patternMatch, "/api/x") != null
+        pattern.match(state.patternMatch, "/api/v1/users") != null
+        pattern.match(state.patternMatch, "/apix") == null
     }
 
     def "should match case-insensitively when enabled"() {
@@ -67,7 +82,7 @@ class RouterPatternSpec extends Specification {
         def pattern = RoutePattern.compile("/Users/{id}", false, false, true)
 
         expect:
-        pattern.match(state.pathParams(), "/users/ABC") != null
+        pattern.match(state.patternMatch, "/users/ABC") != null
     }
 
     def "should reject duplicate parameter names"() {
@@ -83,7 +98,7 @@ class RouterPatternSpec extends Specification {
         def pattern = RoutePattern.compile("/file-{name}.txt", false, false, false)
 
         when:
-        def match = pattern.match(state.pathParams(), "/file-report.txt")
+        def match = pattern.match(state.patternMatch, "/file-report.txt")
 
         then:
         match != null

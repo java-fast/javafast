@@ -6,7 +6,8 @@ package io.javafast.internal;
 final class RouteMatch {
 
     private Route route;
-    private final PathParams pathParams = new PathParams();
+
+    final PatternMatch patternMatch = new PatternMatch();
 
     public void setRoute(Route route) {
         this.route = route;
@@ -14,10 +15,6 @@ final class RouteMatch {
 
     public Route route() {
         return this.route;
-    }
-
-    public PathParams pathParams() {
-        return this.pathParams;
     }
 
 }

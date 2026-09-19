@@ -4,8 +4,6 @@ import io.javafast.http.*;
 import io.javafast.router.HandlerWrapper;
 import io.javafast.router.AccessController;
 
-import java.util.List;
-
 /**
  * Internal routing engine.
  */
@@ -41,19 +39,19 @@ final class Router {
 
         this.registry.findAll(this.routerState, HandlerPhase.BEFORE_MATCHED, ctx.path(), m -> {
             // if beforeMatched has no path params, we inherit route's path params instead
-            final var effective = m.pathParams().isEmpty() ? match.pathParams() : m.pathParams();
+            final var effective = m.patternMatch.params.isEmpty() ? match.patternMatch.params : m.patternMatch.params;
             ((ContextInternal) ctx).setPathParamMap(effective);
             m.route().handler().handle(ctx);
             throwIfHandlersSkipped(ctx);
         });
 
-        ((ContextInternal) ctx).setPathParamMap(match.pathParams());
+        ((ContextInternal) ctx).setPathParamMap(match.patternMatch.params);
         match.route().handler().handle(ctx);
         if (skipRemainingHandlers(ctx)) return;
 
         this.registry.findAll(this.routerState, HandlerPhase.AFTER_MATCHED, ctx.path(), m -> {
             // if afterMatched has no path params, we inherit route's path params instead
-            final var effective = m.pathParams().isEmpty() ? match.pathParams() : m.pathParams();
+            final var effective = m.patternMatch.params.isEmpty() ? match.patternMatch.params : m.patternMatch.params;
             ((ContextInternal) ctx).setPathParamMap(effective);
             m.route().handler().handle(ctx);
             throwIfHandlersSkipped(ctx);

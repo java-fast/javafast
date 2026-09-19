@@ -19,7 +19,7 @@ class RouterSpec extends Specification implements TestUtils {
         then:
         match != null
         match.route().handler() == users
-        match.pathParams().get("id") == "42"
+        match.patternMatch.params.get("id") == "42"
 
         and:
         router.find(HttpMethod.POST, "/users/42") == null

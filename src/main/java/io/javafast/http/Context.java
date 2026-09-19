@@ -82,6 +82,8 @@ public interface Context {
 
     Map<String, List<String>> formParamMap();
 
+    String pathParam(int index);
+
     String pathParam(String key);
 
     <T> Validator<T> pathParamAsClass(String key, Class<T> type);

@@ -6,22 +6,21 @@ import org.openjdk.jmh.annotations.*;
 import java.util.concurrent.TimeUnit;
 
 
-//Benchmark                                                       Mode  Cnt     Score   Error   Units
-//RouterMatchBenchmark.nestedParamRouteMatch                      avgt        157.288           ns/op
-//RouterMatchBenchmark.nestedParamRouteMatch:·gc.alloc.rate       avgt       6645.218          MB/sec
-//RouterMatchBenchmark.nestedParamRouteMatch:·gc.alloc.rate.norm  avgt       1096.000            B/op
-//RouterMatchBenchmark.nestedParamRouteMatch:·gc.count            avgt        250.000          counts
-//RouterMatchBenchmark.nestedParamRouteMatch:·gc.time             avgt         80.000              ms
-//RouterMatchBenchmark.paramRouteMatch                            avgt         70.126           ns/op
-//RouterMatchBenchmark.paramRouteMatch:·gc.alloc.rate             avgt       7180.342          MB/sec
-//RouterMatchBenchmark.paramRouteMatch:·gc.alloc.rate.norm        avgt        528.000            B/op
-//RouterMatchBenchmark.paramRouteMatch:·gc.count                  avgt        266.000          counts
-//RouterMatchBenchmark.paramRouteMatch:·gc.time                   avgt         82.000              ms
-//RouterMatchBenchmark.staticRouteMatch                           avgt         20.224           ns/op
-//RouterMatchBenchmark.staticRouteMatch:·gc.alloc.rate            avgt       6790.237          MB/sec
-//RouterMatchBenchmark.staticRouteMatch:·gc.alloc.rate.norm       avgt        144.000            B/op
-//RouterMatchBenchmark.staticRouteMatch:·gc.count                 avgt        254.000          counts
-//RouterMatchBenchmark.staticRouteMatch:·gc.time                  avgt         78.000              ms
+/*
+* Benchmark                                                       Mode  Cnt   Score     Error   Units
+* RouterMatchBenchmark.nestedParamRouteMatch                      avgt    5  65.733 ±   0.327   ns/op
+* RouterMatchBenchmark.nestedParamRouteMatch:·gc.alloc.rate       avgt    5  ≈ 10⁻⁴            MB/sec
+* RouterMatchBenchmark.nestedParamRouteMatch:·gc.alloc.rate.norm  avgt    5  ≈ 10⁻⁶              B/op
+* RouterMatchBenchmark.nestedParamRouteMatch:·gc.count            avgt    5     ≈ 0            counts
+* RouterMatchBenchmark.paramRouteMatch                            avgt    5  30.005 ±   0.230   ns/op
+* RouterMatchBenchmark.paramRouteMatch:·gc.alloc.rate             avgt    5  ≈ 10⁻⁴            MB/sec
+* RouterMatchBenchmark.paramRouteMatch:·gc.alloc.rate.norm        avgt    5  ≈ 10⁻⁶              B/op
+* RouterMatchBenchmark.paramRouteMatch:·gc.count                  avgt    5     ≈ 0            counts
+* RouterMatchBenchmark.staticRouteMatch                           avgt    5  14.739 ±   0.093   ns/op
+* RouterMatchBenchmark.staticRouteMatch:·gc.alloc.rate            avgt    5  ≈ 10⁻⁴            MB/sec
+* RouterMatchBenchmark.staticRouteMatch:·gc.alloc.rate.norm       avgt    5  ≈ 10⁻⁶              B/op
+* RouterMatchBenchmark.staticRouteMatch:·gc.count                 avgt    5     ≈ 0            counts
+* */
 @State(Scope.Benchmark)
 @BenchmarkMode(Mode.AverageTime)
 @OutputTimeUnit(TimeUnit.NANOSECONDS)

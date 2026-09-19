@@ -86,7 +86,7 @@ final class RouteRegistry {
         final List<Route> entries = this.routes[method.key()];
         if (entries == null) return null;
         for (Route route : entries) {
-            final PathParams match = route.pattern().match(state.routeMatch.pathParams(), requestPath);
+            final PathParams match = route.pattern().match(state.routeMatch.patternMatch, requestPath);
             if (match != null) {
                 state.routeMatch.setRoute(route);
                 return state.routeMatch;
@@ -99,7 +99,7 @@ final class RouteRegistry {
         final List<Route> entries = this.routes[phase.key()];
         if (entries == null) return;
         for (Route route : entries) {
-            final PathParams match = route.pattern().match(state.phaseMatch.pathParams(), requestPath);
+            final PathParams match = route.pattern().match(state.phaseMatch.patternMatch, requestPath);
             if (match != null) {
                 state.phaseMatch.setRoute(route);
                 consumer.accept(state.phaseMatch);
@@ -108,7 +108,7 @@ final class RouteRegistry {
     }
 
     /**
-     * Checks if the registry contains a route for the given method and request path without PatterMatch semantics
+     * Checks if the registry contains a route for the given method and request path without PatternMatch semantics
      */
     boolean has(HttpMethod method, String requestPath) {
         final int key = method.key();

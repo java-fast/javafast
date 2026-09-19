@@ -29,7 +29,7 @@ class ContextInternal implements Context {
     private final String queryString;
 
     private String contextPath;
-    private Map<String, String> pathParamMap;
+    private PathParams pathParamMap;
     private Map<String, String> headerMap;
 
     private int statusCode = HttpStatus.OK.code();
@@ -210,6 +210,11 @@ class ContextInternal implements Context {
     }
 
     @Override
+    public String pathParam(int index) {
+        return this.pathParamMap.get(index);
+    }
+
+    @Override
     public String pathParam(String key) {
         return this.pathParamMap.get(key);
     }
@@ -221,7 +226,7 @@ class ContextInternal implements Context {
 
     @Override
     public Map<String, String> pathParamMap() {
-        return this.pathParamMap;
+        return this.pathParamMap.get();
     }
 
     @Override
@@ -491,7 +496,7 @@ class ContextInternal implements Context {
         this.contextPath = contextPath;
     }
 
-    void setPathParamMap(Map<String, String> pathParamMap) {
+    void setPathParamMap(PathParams pathParamMap) {
         this.pathParamMap = pathParamMap;
     }
 
