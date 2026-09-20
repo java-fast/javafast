@@ -24,6 +24,7 @@ class PathParams extends HashMap<String, String> {
     void reset(String requestPath) {
         this.requestPath = requestPath;
         this.size = 0;
+        clear();
     }
 
     void add(String name, int start, int length) {
@@ -61,7 +62,6 @@ class PathParams extends HashMap<String, String> {
     }
 
     Map<String, String> get() {
-        clear();
         for (int i = 0; i < this.size; i++) {
             final PathParam param = this.params[i];
             put(param.name, param.get());

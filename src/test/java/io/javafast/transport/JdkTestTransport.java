@@ -83,7 +83,6 @@ public class JdkTestTransport implements Transport {
         this.config = config;
         try {
             this.server = HttpServer.create(new InetSocketAddress(config.host() == null ? "localhost" : config.host(), config.port()), 0);
-            // TODO for now single thread for optimizing the code
             this.server.setExecutor(Executors.newSingleThreadExecutor());
         } catch (IOException e) {
             throw new UncheckedIOException(e);

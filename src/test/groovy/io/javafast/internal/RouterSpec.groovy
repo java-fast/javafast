@@ -14,15 +14,26 @@ class RouterSpec extends Specification implements TestUtils {
         router.add(HttpMethod.GET, "/users/{id}", users, null)
 
         when:
-        def match = router.find(HttpMethod.GET, "/users/42")
+        def match = router.find(HttpMethod.GET, "/users/1")
 
         then:
         match != null
         match.route().handler() == users
-        match.patternMatch.params.get("id") == "42"
+        match.patternMatch.params.get("id") == "1"
 
         and:
-        router.find(HttpMethod.POST, "/users/42") == null
+        router.find(HttpMethod.POST, "/users/1") == null
+
+        when:
+        match = router.find(HttpMethod.GET, "/users/2")
+
+        then:
+        match != null
+        match.route().handler() == users
+        match.patternMatch.params.get("id") == "2"
+
+        and:
+        router.find(HttpMethod.POST, "/users/2") == null
     }
 
     def "should reject duplicate route definition"() {
