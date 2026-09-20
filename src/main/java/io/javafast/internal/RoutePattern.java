@@ -1,9 +1,6 @@
 package io.javafast.internal;
 
-import java.util.ArrayList;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Set;
+import java.util.*;
 
 /**
  * Compiled route pattern. Matching is performed directly over path segments;
@@ -173,9 +170,23 @@ final class RoutePattern {
                     i = end;
                 }
             }
-            return new CompositeSegment(parts);
+            for (int partIndex = 0; partIndex < parts.size(); partIndex++) {
+                if (parts.get(partIndex) instanceof ParamPart p) {
+                    parts.set(partIndex, new ParamPart(p.name(), findNextTextPart(parts, partIndex + 1), p.acceptsSlash()));
+                }
+            }
+            return new CompositeSegment(parts.toArray(new Part[0]));
         }
         return new LiteralSegment(value);
+    }
+
+    private static TextPart findNextTextPart(List<Part> parts, int from) {
+        for (int i = from; i < parts.size(); i++) {
+            if (parts.get(i) instanceof TextPart t) {
+                return t;
+            }
+        }
+        return null;
     }
 
     private static void requireName(String name, String path, Set<String> names) {
@@ -214,17 +225,16 @@ final class RoutePattern {
         }
     }
 
-    private record CompositeSegment(List<Part> parts) implements Segment {
+    private record CompositeSegment(Part[] parts) implements Segment {
 
-        private CompositeSegment(List<Part> parts) {
-            this.parts = List.copyOf(parts);
+        private CompositeSegment(Part[] parts) {
+            this.parts = parts;
         }
 
         @Override
         public boolean match(PathSplits.PathSplit split, PathParams params, boolean ci) {
             int pos = 0;
-            for (int i = 0; i < this.parts.size(); i++) {
-                final Part part = this.parts.get(i);
+            for (final Part part : this.parts) {
                 if (part instanceof TextPart(String value)) {
                     final int length = value.length();
                     if (pos + length > split.length || !split.regionMatch(value, pos, ci)) {
@@ -232,29 +242,23 @@ final class RoutePattern {
                     }
                     pos += length;
                 } else if (part instanceof ParamPart p) {
-                    final int end = nextTextStart(this.parts, i+1, split, pos, ci);
+                    final int end = nextTextStart(p.next(), split, pos, ci);
                     if (end < pos) {
                         return false;
                     }
-                    params.add(
-                        p.name(),
-                        split.start + pos,
-                        end - pos
-                    );
+                    params.add(p.name(), split.start + pos, end - pos);
                     pos = end;
                 }
             }
             return pos == split.length;
         }
 
-        private static int nextTextStart(List<Part> parts, int from, PathSplits.PathSplit input, int pos, boolean ci) {
-            for (int j = from; j < parts.size(); j++) {
-                if (parts.get(j) instanceof TextPart(String value)) {
-                    final int index = input.lastIndexOf(value, pos, ci);
-                    return index < 0 ? input.length : index;
-                }
+        private static int nextTextStart(TextPart next, PathSplits.PathSplit input, int pos, boolean ci) {
+            if (next == null) {
+                return input.length;
             }
-            return input.length;
+            final int index = input.lastIndexOf(next.value(), pos, ci);
+            return index < 0 ? input.length : index;
         }
 
     }
