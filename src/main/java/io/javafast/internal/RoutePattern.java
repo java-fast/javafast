@@ -1,8 +1,9 @@
 package io.javafast.internal;
 
-import java.net.URLDecoder;
-import java.nio.charset.StandardCharsets;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Set;
 
 /**
  * Compiled route pattern. Matching is performed directly over path segments;
@@ -46,7 +47,7 @@ final class RoutePattern {
         final String patternPath = trailingWildcard ? rawPath.substring(0, rawPath.length() - 1) : rawPath;
         final boolean wildcard = "*".equals(patternPath);
 
-        final List<Segment> segments = parseSegments(patternPath, rawPath, caseInsensitive);
+        final List<Segment> segments = parseSegments(patternPath, rawPath);
         return new RoutePattern(rawPath, segments, wildcard, trailingWildcard, ignoreTrailingSlash, multipleSlashes, caseInsensitive);
     }
 
@@ -77,13 +78,9 @@ final class RoutePattern {
             }
 
             final PathSplits.PathSplit split = state.splits.split(splitIndex++); // cannot be null: splitIndex >=0 && splitIndex < count
-            if (!segment.match(split, this.caseInsensitive)) return null;
-            if (segment instanceof ParameterSegment p) {
-                state.params.add(p.name, split.start, split.length);
-            } else if (segment instanceof CompositeSegment c) {
-                // TODO zero-allocation capture?
-                c.capture(split.get(), state.params);
-            }
+            if (!segment.match(split, state.params, this.caseInsensitive))
+                return null;
+
             routeIndex++;
         }
 
@@ -123,11 +120,7 @@ final class RoutePattern {
         return count;
     }
 
-    private static String decode(String value) {
-        return URLDecoder.decode(value, StandardCharsets.UTF_8);
-    }
-
-    private static List<Segment> parseSegments(String path, String rawPath, boolean caseInsensitive) {
+    private static List<Segment> parseSegments(String path, String rawPath) {
         final List<Segment> result = new ArrayList<>();
         final Set<String> names = new HashSet<>();
         final StringBuilder current = new StringBuilder();
@@ -135,18 +128,18 @@ final class RoutePattern {
             final char c = path.charAt(i);
             if (c == '/') {
                 if (current.length() > 0) {
-                    result.add(parseSegment(current.toString(), rawPath, names, caseInsensitive));
+                    result.add(parseSegment(current.toString(), rawPath, names));
                     current.setLength(0);
                 }
             } else {
                 current.append(c);
             }
         }
-        if (current.length() > 0) result.add(parseSegment(current.toString(), rawPath, names, caseInsensitive));
+        if (current.length() > 0) result.add(parseSegment(current.toString(), rawPath, names));
         return List.copyOf(result);
     }
 
-    private static Segment parseSegment(String value, String rawPath, Set<String> names, boolean caseInsensitive) {
+    private static Segment parseSegment(String value, String rawPath, Set<String> names) {
         if ("*".equals(value)) return WildcardSegment.INSTANCE;
         if (value.startsWith("{") && value.endsWith("}") && value.length() > 2) {
             final String name = value.substring(1, value.length() - 1);
@@ -171,7 +164,7 @@ final class RoutePattern {
                     if (end < 0) throw new IllegalArgumentException("Invalid route '" + rawPath + "'");
                     final String name = value.substring(i + 1, end);
                     requireName(name, rawPath, names);
-                    parts.add(new ParamPart(name, open == '<'));
+                    parts.add(new ParamPart(name, null, open == '<'));
                     i = end + 1;
                 } else {
                     int end = i + 1;
@@ -197,35 +190,26 @@ final class RoutePattern {
     private record TextPart(String value) implements RoutePattern.Part {
     }
 
-    private record ParamPart(String name, boolean acceptsSlash) implements RoutePattern.Part {
+    private record ParamPart(String name, TextPart next, boolean acceptsSlash) implements RoutePattern.Part {
     }
 
     private interface Segment {
-        String match(String value, boolean caseInsensitive);
-
-        boolean match(PathSplits.PathSplit split, boolean caseInsensitive);
+        boolean match(PathSplits.PathSplit split, PathParams params, boolean caseInsensitive);
     }
 
     private record LiteralSegment(String value) implements Segment {
-        @Override
-        public String match(String input, boolean ci) {
-            return ci ? this.value.equalsIgnoreCase(input) ? input : null : this.value.equals(input) ? input : null;
-        }
 
         @Override
-        public boolean match(PathSplits.PathSplit split, boolean caseInsensitive) {
+        public boolean match(PathSplits.PathSplit split, PathParams params, boolean caseInsensitive) {
             return split.match(this.value, caseInsensitive);
         }
     }
 
     private record ParameterSegment(String name, boolean acceptsSlash) implements Segment {
-        @Override
-        public String match(String value, boolean ci) {
-            return value;
-        }
 
         @Override
-        public boolean match(PathSplits.PathSplit split, boolean caseInsensitive) {
+        public boolean match(PathSplits.PathSplit split, PathParams params, boolean caseInsensitive) {
+            params.add(this.name, split.start, split.length);
             return true;
         }
     }
@@ -237,70 +221,51 @@ final class RoutePattern {
         }
 
         @Override
-        public String match(String input, boolean ci) {
+        public boolean match(PathSplits.PathSplit split, PathParams params, boolean ci) {
             int pos = 0;
             for (int i = 0; i < this.parts.size(); i++) {
                 final Part part = this.parts.get(i);
                 if (part instanceof TextPart(String value)) {
-                    if (ci ? !input.regionMatches(true, pos, value, 0, value.length())
-                        : !input.startsWith(value, pos)) return null;
-                    pos += value.length();
-                } else if (part instanceof ParamPart) {
-                    final int end = nextTextStart(this.parts, i + 1, input, pos, ci);
-                    if (end < pos) return null;
+                    final int length = value.length();
+                    if (pos + length > split.length || !split.regionMatch(value, pos, ci)) {
+                        return false;
+                    }
+                    pos += length;
+                } else if (part instanceof ParamPart p) {
+                    final int end = nextTextStart(this.parts, i+1, split, pos, ci);
+                    if (end < pos) {
+                        return false;
+                    }
+                    params.add(
+                        p.name(),
+                        split.start + pos,
+                        end - pos
+                    );
                     pos = end;
                 }
             }
-            return pos == input.length() ? input : null;
+            return pos == split.length;
         }
 
-        @Override
-        public boolean match(PathSplits.PathSplit split, boolean caseInsensitive) {
-            return false;
-        }
-
-        void capture(String input, Map<String, String> out) {
-            int pos = 0;
-            for (int i = 0; i < this.parts.size(); i++) {
-                final Part part = this.parts.get(i);
-                if (part instanceof TextPart(String value)) pos += value.length();
-                else if (part instanceof ParamPart p) {
-                    final int end = nextTextStart(this.parts, i + 1, input, pos, false);
-                    out.put(p.name, decode(input.substring(pos, end))); // FIXME allocation!
-                    pos = end;
-                }
-            }
-        }
-
-        private static int nextTextStart(List<Part> parts, int from, String input, int pos, boolean ci) {
+        private static int nextTextStart(List<Part> parts, int from, PathSplits.PathSplit input, int pos, boolean ci) {
             for (int j = from; j < parts.size(); j++) {
                 if (parts.get(j) instanceof TextPart(String value)) {
-                    final int index = ci ? indexOfIgnoreCase(input, value, pos) : input.indexOf(value, pos);
-                    return index < 0 ? input.length() : index;
+                    final int index = input.lastIndexOf(value, pos, ci);
+                    return index < 0 ? input.length : index;
                 }
             }
-            return input.length();
+            return input.length;
         }
 
-        private static int indexOfIgnoreCase(String input, String needle, int from) {
-            for (int i = from; i + needle.length() <= input.length(); i++) {
-                if (input.regionMatches(true, i, needle, 0, needle.length())) return i;
-            }
-            return -1;
-        }
     }
 
     private enum WildcardSegment implements Segment {
         INSTANCE;
 
         @Override
-        public String match(String value, boolean ci) {
-            return value;
-        }
-
-        @Override
-        public boolean match(PathSplits.PathSplit split, boolean caseInsensitive) {
+        public boolean match(PathSplits.PathSplit split, PathParams params, boolean caseInsensitive) {
             return true;
         }
     }
+
 }

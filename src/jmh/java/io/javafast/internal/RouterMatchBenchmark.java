@@ -34,6 +34,7 @@ public class RouterMatchBenchmark {
         this.router.add(HttpMethod.GET, "/health", ctx -> {});
         this.router.add(HttpMethod.GET, "/users/{id}", ctx -> {});
         this.router.add(HttpMethod.GET, "/teams/{teamId}/users/{userId}", ctx -> {});
+        this.router.add(HttpMethod.GET, "/file-{name}.txt", ctx -> {});
     }
 
     @Benchmark
@@ -49,5 +50,10 @@ public class RouterMatchBenchmark {
     @Benchmark
     public Object nestedParamRouteMatch() {
         return this.router.find(HttpMethod.GET, "/teams/7/users/42");
+    }
+
+    @Benchmark
+    public Object compositeParamRouteMatch() {
+        return this.router.find(HttpMethod.GET, "/file-records.txt");
     }
 }

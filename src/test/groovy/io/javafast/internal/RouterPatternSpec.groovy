@@ -95,14 +95,47 @@ class RouterPatternSpec extends Specification {
 
     def "should capture parameter in composite segment"() {
         given:
-        def pattern = RoutePattern.compile("/file-{name}.txt", false, false, false)
+        def pattern = RoutePattern.compile(rawPath, false, false, false)
 
         when:
-        def match = pattern.match(state.patternMatch, "/file-report.txt")
+        def match = pattern.match(state.patternMatch, requestPath)
 
         then:
         match != null
-        match.get("name") == "report"
+        match.get('name') == captured
+
+        where:
+        rawPath                       | requestPath                   | captured
+        '/file-{name}.txt'            | '/file-report.txt'            | 'report'
+        '/file-{name}.txt'            | '/file-report.abc.txt'        | 'report.abc'
+        '/file-{name}.txt'            | '/file-report.txt.txt'        | 'report.txt'
+        '/file-{name}.txt.txt'        | '/file-report.txt.txt'        | 'report'
+        '/file-{name}.txt/.txt'       | '/file-report.txt/.txt'       | 'report'
+        '/file-{name}.txt/.txt'       | '/file-report.abc.txt/.txt'   | 'report.abc'
+        '/file-{name}.txt/static.txt' | '/file-report.txt/static.txt' | 'report'
+    }
+
+    def "should capture parameter case-insensitive in composite segment"() {
+        given:
+        def pattern = RoutePattern.compile(rawPath, false, false, true)
+
+        when:
+        def match = pattern.match(state.patternMatch, requestPath)
+
+        then:
+        match != null
+        match.get('name') == captured
+
+        where:
+        rawPath                       | requestPath                   | captured
+        '/file-{name}.txt'            | '/file-report.tXt'            | 'report'
+        '/file-{name}.txt'            | '/FILE-REPORT.TXT'            | 'REPORT'
+        '/file-{name}.txt'            | '/file-report.abc.TXT'        | 'report.abc'
+        '/file-{name}.txt'            | '/file-report.txt.txt'        | 'report.txt'
+        '/file-{name}.txt.txt'        | '/file-report.txt.txt'        | 'report'
+        '/file-{name}.txt/.txt'       | '/file-report.txt/.txt'       | 'report'
+        '/file-{name}.txt/.txt'       | '/file-report.abc.txt/.txt'   | 'report.abc'
+        '/file-{name}.txt/static.txt' | '/FILE-report.txt/static.txt' | 'report'
     }
 
 }

@@ -35,18 +35,9 @@ public class PathSplits {
         int start;
         int length;
 
-        private String value; // lazy
-
         private void set(int start, int length) {
             this.start = start;
             this.length = length;
-        }
-
-        String get() {
-            if (this.value == null) {
-                this.value = requestPath.substring(this.start, this.start + this.length);
-            }
-            return this.value;
         }
 
         boolean empty() {
@@ -62,6 +53,36 @@ public class PathSplits {
                 this.start,
                 this.length
             );
+        }
+
+        boolean regionMatch(String value, int offset, boolean caseInsensitive) {
+            return requestPath.regionMatches(
+                caseInsensitive,
+                this.start + offset,
+                value,
+                0,
+                value.length()
+            );
+        }
+
+        /**
+         * Unlike Java's String.lastIndexOf, this method returns the index of the last occurrence of the given test string within the current path segment.
+         * @return index relative to this PathSplit
+         */
+        int lastIndexOf(String test, int offset, boolean caseInsensitive) {
+            return findLastOccurrence(requestPath, test, this.start + offset, this.start + this.length, caseInsensitive) - this.start;
+        }
+
+        private static int findLastOccurrence(String input, String needle, int from, int to, boolean ci) {
+            final int needleLength = needle.length();
+            final int max = Math.min(to, input.length() - needleLength + 1);
+            int last = -1;
+            for (int i = from; i < max; i++) {
+                if (input.regionMatches(ci, i, needle, 0, needleLength)) {
+                    last = i;
+                }
+            }
+            return last;
         }
 
     }
