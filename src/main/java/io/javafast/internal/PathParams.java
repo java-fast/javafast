@@ -8,7 +8,7 @@ import java.util.Map;
 /**
  * Match of path params consumed by the core runtime
  */
-class PathParams extends HashMap<String, String> { // TODO further improvements: use a custom lightweight hashmap
+class PathParams extends HashMap<String, String> {
 
     private final PathParam[] params;
     private String requestPath;
@@ -50,7 +50,6 @@ class PathParams extends HashMap<String, String> { // TODO further improvements:
      */
     String get(String name) {
         return computeIfAbsent(name, key -> {
-            // it is o(n), but n is constant and by default it is 16
             for (int i = 0; i < this.size; i++) {
                 final PathParam param = this.params[i];
                 if (key.equals(param.name)) {
