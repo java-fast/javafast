@@ -156,19 +156,19 @@ public final class TransportBuffer implements AutoCloseable {
                 }
                 tail = index;
 
-                MemorySegment destination = this.blocks[index].payload();
-                while (destination.byteSize() > 0) {
-                    final int written = source.read(destination);
+                final MemorySegment destination = this.blocks[index].payload();
+                long remaining = this.payloadSize;
+                while (remaining > 0) {
+                    final int written = source.read(destination.asSlice(this.payloadSize - remaining));
                     if (written == -1) {
                         publishChain(first);
                         return true;
                     }
-                    if (written <= 0 || written > destination.byteSize()) {
+                    if (written <= 0 || written > remaining) {
                         throw new IllegalStateException("Invalid TransportSource.read() result: " + written);
                     }
-                    destination = destination.asSlice(written);
+                    remaining -= written;
                 }
-
                 // Block is full.
                 // Do NOT acquire the next block until we actually need it.
             }
@@ -212,7 +212,6 @@ public final class TransportBuffer implements AutoCloseable {
      * is an unconditional release-store
      */
     public void release(Block claimed) {
-        Objects.requireNonNull(claimed);
         Block current = claimed;
         while (current != null) {
             /*
@@ -320,17 +319,19 @@ public final class TransportBuffer implements AutoCloseable {
 
         private final int index;
         private final MemorySegment segment; // [state][payload][next]
+        private final MemorySegment payload; // [state][payload][next]
 
         private Block(int index, MemorySegment segment) {
             this.index = index;
             this.segment = segment;
+            this.payload = segment.asSlice(STATE_OFFSET + STATE_SIZE, segment.byteSize() - STATE_SIZE - NEXT_SIZE);
         }
 
         /**
          * Payload only. Excludes state bytes and next-index trailer.
          */
         public MemorySegment payload() {
-            return this.segment.asSlice(STATE_OFFSET + STATE_SIZE, this.segment.byteSize() - STATE_SIZE - NEXT_SIZE);
+            return this.payload;
         }
 
         public Block next() {

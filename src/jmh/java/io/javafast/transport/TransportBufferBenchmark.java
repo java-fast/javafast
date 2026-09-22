@@ -12,6 +12,13 @@ import org.openjdk.jmh.annotations.TearDown;
 
 import java.util.concurrent.TimeUnit;
 
+/**
+ * Benchmark                                                      Mode  Cnt    Score    Error   Units
+ * TransportBufferBenchmark.requestLifecycle                      avgt    5  658.299 ±  1.236   ns/op
+ * TransportBufferBenchmark.requestLifecycle:·gc.alloc.rate       avgt    5   ≈ 10⁻⁴           MB/sec
+ * TransportBufferBenchmark.requestLifecycle:·gc.alloc.rate.norm  avgt    5   ≈ 10⁻⁴             B/op
+ * TransportBufferBenchmark.requestLifecycle:·gc.count            avgt    5      ≈ 0           counts
+ */
 @State(Scope.Thread)
 @BenchmarkMode(Mode.AverageTime)
 @OutputTimeUnit(TimeUnit.NANOSECONDS)
