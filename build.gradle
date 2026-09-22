@@ -20,7 +20,11 @@ dependencies {
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 }
 
+String jmhIncludes = findProperty("jmh.includes")
 jmh {
+    if (jmhIncludes != null) {
+        includes = [jmhIncludes]
+    }
     warmupIterations = 2
     iterations = 5
     fork = 1
