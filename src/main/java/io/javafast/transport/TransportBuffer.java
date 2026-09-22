@@ -287,10 +287,6 @@ public final class TransportBuffer implements AutoCloseable {
         this.blocks[index].segment.set(ValueLayout.JAVA_INT_UNALIGNED, this.blockSize - NEXT_SIZE, next);
     }
 
-    public int state(Block block) {
-        return stateAcquire(block.index);
-    }
-
     /**
      * DEBUG methods
      */
@@ -363,7 +359,5 @@ public final class TransportBuffer implements AutoCloseable {
             return "Block[" + this.index + ']';
         }
     }
-
-
 
 }

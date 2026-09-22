@@ -141,6 +141,42 @@ class TransferBufferSpec extends Specification {
         buffer.close()
     }
 
+    def 'should throw exception if the buffer is already closed'() {
+        given:
+        def buffer = TransportBuffer.create(64, 16)
+        def payload = bytes(48)
+        assert buffer.write(sourceFromBytes(payload, [9, 11, 13, 15]))
+
+        when: 'cannot claim from a closed buffer'
+        buffer.close()
+        buffer.claim()
+
+        then:
+        thrown(IllegalStateException)
+    }
+
+    def 'should throw exception if the block size or block count is not valid'() {
+        when: 'invalid block size'
+        TransportBuffer.create(1, 1)
+        then:
+        thrown(IllegalArgumentException)
+
+        when: 'invalid block count - too small'
+        TransportBuffer.create(64, 0)
+        then:
+        thrown(IllegalArgumentException)
+
+        when: 'invalid block count - negative'
+        TransportBuffer.create(64, -1)
+        then:
+        thrown(IllegalArgumentException)
+
+        when: 'invalid block count - not a power of two'
+        TransportBuffer.create(64, 3)
+        then:
+        thrown(IllegalArgumentException)
+    }
+
     private static List<TransportBuffer.Block> chain(TransportBuffer.Block head) {
         def chain = [] as List<TransportBuffer.Block>
         def current = head
