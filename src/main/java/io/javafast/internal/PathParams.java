@@ -8,7 +8,7 @@ import java.util.Map;
 /**
  * Match of path params consumed by the core runtime
  */
-class PathParams extends HashMap<String, String> {
+final class PathParams extends HashMap<String, String> {
 
     private final PathParam[] params;
     private String requestPath;

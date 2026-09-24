@@ -1,12 +1,12 @@
 package io.javafast.internal;
 
-public class PathSplits {
+class PathSplits {
 
     private final PathSplit[] splits;
     private final JoinSplit joinSplit = new JoinSplit();
     private String requestPath;
 
-    public PathSplits(int maxSize) {
+    PathSplits(int maxSize) {
         this.splits = new PathSplit[maxSize];
         for (int i = 0; i < this.splits.length; i++) {
             this.splits[i] = new PathSplit();

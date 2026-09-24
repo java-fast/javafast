@@ -19,7 +19,7 @@ import java.util.Objects;
 import java.util.function.Function;
 import java.util.stream.Stream;
 
-class ContextInternal implements Context {
+final class ContextInternal implements Context {
 
     private final AppData appData;
     private final HttpExchange exchange;
