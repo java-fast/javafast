@@ -1,4 +1,4 @@
-package io.javafast.transport
+package io.javafast
 
 import io.javafast.test.TestUtils
 import spock.lang.Specification
@@ -7,7 +7,7 @@ import spock.util.concurrent.AsyncConditions
 import java.util.concurrent.ConcurrentLinkedQueue
 import java.util.concurrent.Executors
 
-class TransportConcurrencySpec extends Specification implements TestUtils {
+class ConcurrentRequestSpec extends Specification implements TestUtils {
 
     def 'smoke - concurrent dispatch does not corrupt route match state'() {
         given:
@@ -21,6 +21,7 @@ class TransportConcurrencySpec extends Specification implements TestUtils {
         def ac = new AsyncConditions(requestCount)
         def pool = Executors.newFixedThreadPool(32)
         def failures = new ConcurrentLinkedQueue<String>()
+        client() // pre-initialize shared client
 
         when:
         requestCount.times { i ->
