@@ -52,22 +52,15 @@ public class TransportBufferBenchmark {
 
     @Benchmark
     public int requestLifecycle() {
-        if (!this.buffer.write(this.source)) {
-            throw new IllegalStateException("write failed");
-        }
+        final TransportBuffer.Block claimed = this.buffer.acquire();
 
-        final TransportBuffer.Block claimed = this.buffer.claim();
         if (claimed == null) {
-            throw new IllegalStateException("claim returned null");
+            throw new IllegalStateException("acquire returned null");
         }
 
-        int blocks = 0;
-        TransportBuffer.Block current = claimed;
-        while (current != null) {
-            blocks++;
-            current = current.next();
-        }
-        this.buffer.release(claimed);
-        return blocks;
+        final int written = this.source.readAll(this.buffer, claimed);
+        claimed.release();
+
+        return written;
     }
 }
