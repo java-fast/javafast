@@ -1,11 +1,14 @@
 package io.javafast.test
 
+import com.sun.net.httpserver.Headers
+import com.sun.net.httpserver.HttpContext
+import com.sun.net.httpserver.HttpExchange
+import com.sun.net.httpserver.HttpPrincipal
 import io.javafast.JavaFast
 import io.javafast.config.JavaFastConfig
 import io.javafast.http.Context
 import io.javafast.http.HttpMethod
-import io.javafast.internal.ContextInternal
-import io.javafast.http.HttpExchange
+import io.javafast.internal.RequestContext
 import io.javafast.transport.JdkTestTransport
 import io.javafast.transport.Transport
 
@@ -36,12 +39,14 @@ trait TestUtils implements Logger {
         if(app != null) app.stop()
     }
 
-    static class TestExchange implements HttpExchange {
+    static class TestExchange extends HttpExchange {
 
         private final String method
         private final String uri
         int statusCode = -1
         boolean closed = false
+        Headers requestHeaders = new Headers()
+
         ByteArrayOutputStream response = new ByteArrayOutputStream()
 
         TestExchange(String method, String uri) {
@@ -50,42 +55,88 @@ trait TestUtils implements Logger {
         }
 
         @Override
-        String method() {
-            return method
+        Headers getRequestHeaders() {
+            return this.requestHeaders
         }
 
         @Override
-        String uri() {
-            return uri
-        }
-
-        @Override
-        String header(String name) {
+        Headers getResponseHeaders() {
             return null
         }
 
         @Override
-        InputStream requestBody() {
-            return InputStream.nullInputStream()
+        URI getRequestURI() {
+            return new URI(this.uri)
         }
 
         @Override
-        void status(int status) {
-            this.statusCode = status
+        String getRequestMethod() {
+            return method
         }
 
         @Override
-        void header(String name, String value) {
-        }
-
-        @Override
-        OutputStream responseBody() {
-            return response
+        HttpContext getHttpContext() {
+            return null
         }
 
         @Override
         void close() {
             this.closed = true
+        }
+
+        @Override
+        InputStream getRequestBody() {
+            return InputStream.nullInputStream()
+        }
+
+        @Override
+        OutputStream getResponseBody() {
+            return response
+        }
+
+        @Override
+        void sendResponseHeaders(int rCode, long responseLength) throws IOException {
+
+        }
+
+        @Override
+        InetSocketAddress getRemoteAddress() {
+            return null
+        }
+
+        @Override
+        int getResponseCode() {
+            return this.statusCode
+        }
+
+        @Override
+        InetSocketAddress getLocalAddress() {
+            return null
+        }
+
+        @Override
+        String getProtocol() {
+            return null
+        }
+
+        @Override
+        Object getAttribute(String name) {
+            return null
+        }
+
+        @Override
+        void setAttribute(String name, Object value) {
+
+        }
+
+        @Override
+        void setStreams(InputStream i, OutputStream o) {
+
+        }
+
+        @Override
+        HttpPrincipal getPrincipal() {
+            return null
         }
 
         String responseText() {
@@ -99,7 +150,10 @@ trait TestUtils implements Logger {
     }
 
     Context contextOf(HttpMethod method, String uri) {
-        return new ContextInternal(null, new TestExchange(method.name(), uri))
+        def ctx = new RequestContext();
+        ctx.method = method
+        ctx.path = uri
+        return ctx
     }
 
     JavaFast create(int port, Supplier<Transport> transportFactory, Consumer<JavaFastConfig> config) {

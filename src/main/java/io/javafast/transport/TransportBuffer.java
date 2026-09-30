@@ -1,10 +1,12 @@
 package io.javafast.transport;
 
+import java.io.IOException;
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import java.lang.invoke.VarHandle;
 import java.nio.ByteBuffer;
+import java.nio.channels.ReadableByteChannel;
 
 /**
  * Fixed-size block ring buffer for transport/request execution.
@@ -80,6 +82,11 @@ public final class TransportBuffer implements AutoCloseable {
             setStateFree(i);
             clearNext(i);
         }
+    }
+
+    public Writer writer() {
+        final Block block = acquire();
+        return block == null ? null : block.writer();
     }
 
     public Block acquire() {
@@ -160,21 +167,38 @@ public final class TransportBuffer implements AutoCloseable {
 
     public final class Block {
 
+        private final Writer writer = new Writer(TransportBuffer.this);
+
         private final int index;
         private final MemorySegment segment; // [state][payload][next]
-        private final ByteBuffer payload; // [payload]
+        private final MemorySegment payload; // [payload]
+        private final ByteBuffer byteBuffer; // ByteBuffer view of the payload
 
         private Block(int index, MemorySegment segment) {
             this.index = index;
             this.segment = segment;
-            this.payload = segment.asSlice(STATE_OFFSET + STATE_SIZE, segment.byteSize() - STATE_SIZE - NEXT_SIZE).asByteBuffer();
+            this.payload = segment.asSlice(STATE_OFFSET + STATE_SIZE, segment.byteSize() - STATE_SIZE - NEXT_SIZE);
+            this.byteBuffer = this.payload.asByteBuffer();
+            this.writer.head = this; // head never changes
+        }
+
+        private Writer writer() {
+            // block-confined writer takeover
+            if (this.writer.current == null) {
+                this.writer.current = this;
+            }
+            return this.writer;
         }
 
         /**
          * Payload only. Excludes state bytes and next-index trailer.
          */
-        public ByteBuffer payload() {
+        public MemorySegment payload() {
             return this.payload;
+        }
+
+        public ByteBuffer byteBuffer() {
+            return this.byteBuffer;
         }
 
         /**
@@ -187,9 +211,10 @@ public final class TransportBuffer implements AutoCloseable {
                 final int next = getNext(current);
                 clearNext(current);
                 setStateFree(current);
-                blocks[current].payload.clear();
+                blocks[current].byteBuffer.clear();
                 current = next;
             }
+            this.writer.reset();
         }
 
         public void link(Block next) {
@@ -201,5 +226,69 @@ public final class TransportBuffer implements AutoCloseable {
             return "Block[" + this.index + ']';
         }
     }
+
+    public final class Writer {
+
+        private final TransportBuffer owner;
+
+        private Block head;
+        private Block current;
+        private int totalWritten;
+
+        private Writer(TransportBuffer owner) {
+            this.owner = owner;
+        }
+
+        public int read(ReadableByteChannel channel) throws IOException {
+            if (this.current == null) { // try acquiring the first block
+                this.current = this.owner.acquire();
+                if (this.current == null) {
+                    return 0;
+                }
+                this.head = this.current;
+            }
+            int read = 0;
+            for (;;) {
+                final ByteBuffer target = this.current.byteBuffer;
+                final int written = channel.read(target);
+                if (written < 0) {
+                    return read == 0 ? -1 : read;
+                }
+                read += written;
+                if (target.hasRemaining()) {
+                    break;
+                }
+                final Block next = this.owner.acquire();
+                if (next == null) {
+                    break;
+                }
+                this.current.link(next);
+                this.current = next;
+            }
+            this.totalWritten += read;
+            return read;
+        }
+
+        public void release() {
+            this.head.release();
+        }
+
+        public void reset() {
+            // block-confined writer reset
+            this.current = null;
+            this.totalWritten = 0;
+        }
+
+        public int totalWritten() {
+            return this.totalWritten;
+        }
+
+        Block head() {
+            return this.head;
+        }
+
+    }
+
+
 
 }

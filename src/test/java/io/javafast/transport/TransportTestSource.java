@@ -1,9 +1,22 @@
 package io.javafast.transport;
 
+import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.nio.BufferOverflowException;
 import java.nio.ByteBuffer;
+import java.nio.channels.ReadableByteChannel;
 
-public interface TransportTestSource {
+public interface TransportTestSource extends ReadableByteChannel {
+
+    @Override
+    default boolean isOpen() {
+        return true;
+    }
+
+    @Override
+    default void close() {
+        // no-op
+    }
 
     /**
      * Fills destination
@@ -11,15 +24,32 @@ public interface TransportTestSource {
      * @param destination target ByteBuffer
      * @return POSITIVE for number of bytes written, -1 for source finished
      */
-    default int read(ByteBuffer destination) {
-        return 0;
+    @Override
+    int read(ByteBuffer destination);
+
+    default TransportBuffer.Writer copyTo(TransportBuffer buffer) {
+        final TransportBuffer.Writer writer = buffer.writer();
+        if (writer == null) {
+            throw new BufferOverflowException();
+        }
+        try {
+            final long time = System.currentTimeMillis();
+            while (System.currentTimeMillis() - time < 100) { // read timeout 100 milliseconds
+                // -1 semantics cause an infinite loop here
+                // a channel can return always 0 if the buffer is exhausted
+                if (writer.read(this) < 0) break;
+            }
+            return writer;
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
+        }
     }
 
     default int readAll(TransportBuffer buffer, TransportBuffer.Block head) {
         int total = 0;
         int read;
         var current = head;
-        var payload = current.payload();
+        var payload = current.byteBuffer();
         while ((read = read(payload)) > 0) {
             total += read;
             if (!payload.hasRemaining()) {
@@ -30,7 +60,7 @@ public interface TransportTestSource {
                 }
                 current.link(next);
                 current = next;
-                payload = next.payload();
+                payload = next.byteBuffer();
             }
         }
         return total;

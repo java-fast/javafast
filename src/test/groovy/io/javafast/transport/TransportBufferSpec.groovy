@@ -15,18 +15,19 @@ class TransportBufferSpec extends Specification implements TransportUtils {
         def source = transportSource(payload, [5, 7, 12])
 
         when:
-        def block = buffer.acquire()
-        def written = source.readAll(buffer, block)
+        def writer = buffer.writer()
+        def written = writer.read(source)
+        written += writer.read(source)
+        written += writer.read(source)
 
         then:
-        block != null
         written == 24
-        readBytes(buffer, block, payload.length) == payload
-        !hasNext(buffer, block)
+        readBytes(buffer, writer.head, payload.length) == payload
+        !hasNext(buffer, writer.head)
         buffer.acquire() == null // cannot acquire, no more blocks left
 
         when:
-        block.release()
+        writer.release()
 
         then:
         buffer.freeBlockCount() == 1
@@ -42,13 +43,13 @@ class TransportBufferSpec extends Specification implements TransportUtils {
         def source = transportSource(payload, [17, 23, 31, 29, 40])
 
         when:
-        def head = buffer.acquire()
-        def written = source.readAll(buffer, head)
+        def writer = source.copyTo(buffer)
+        def head = writer.head
         def chain = chain(buffer, head)
 
         then:
         head != null
-        written == 140
+        writer.totalWritten() == 140
         chain.size() >= 3
         chain*.toString().toSet().size() == chain.size()
         readBytes(buffer, head, payload.length) == payload
@@ -63,19 +64,18 @@ class TransportBufferSpec extends Specification implements TransportUtils {
         buffer.close()
     }
 
-    def 'should rollback unpublished chain when capacity is exhausted'() {
+    def 'should stop when capacity is exhausted'() {
         given:
         def buffer = TransportBuffer.create(64, 2)
         def payload = bytes(buffer.capacity() + 1)
         def source = transportSource(payload, [59])
 
         when:
-        def head = buffer.acquire()
-        source.readAll(buffer, head)
+        def writer = source.copyTo(buffer)
 
         then:
-        thrown(BufferOverflowException)
-        buffer.freeBlockCount() == 2
+        writer.totalWritten() == 56 + 56
+        buffer.freeBlockCount() == 0
 
         cleanup:
         buffer.close()
@@ -92,11 +92,10 @@ class TransportBufferSpec extends Specification implements TransportUtils {
         }
 
         when:
-        def block = buffer.acquire()
-        def written = notReadySource.readAll(buffer, block)
+        def writer = notReadySource.copyTo(buffer)
 
         then: 'nothing written and acquired blocks are released'
-        written == 0
+        writer.totalWritten() == 0
 
         cleanup:
         buffer.close()
@@ -107,8 +106,7 @@ class TransportBufferSpec extends Specification implements TransportUtils {
         def buffer = TransportBuffer.create(64, 16)
         def payload = bytes(48)
         def source = transportSource(payload, [9, 11, 13, 15])
-        def block = buffer.acquire()
-        assert source.readAll(buffer, block) == 48
+        assert source.copyTo(buffer).totalWritten() == 48
 
         when: 'cannot claim from a closed buffer'
         buffer.close()

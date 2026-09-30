@@ -2,6 +2,7 @@ package io.javafast.transport;
 
 import org.openjdk.jmh.annotations.*;
 
+import java.io.IOException;
 import java.util.concurrent.TimeUnit;
 
 @State(Scope.Thread)
@@ -15,22 +16,22 @@ public class TransportBufferBenchmark {
     private FixedSource source;
 
     @Param({
-        "256",
-        "512",
+//        "256",
+//        "512",
         "1024",
-        "2048",
-        "4096",
-        "8192",
-        "16384"
+//        "2048",
+//        "4096",
+//        "8192",
+//        "16384"
     })
     int blockSize;
 
     @Param({
-        "256",
-        "1024",
+//        "256",
+//        "1024",
         "4096",
-        "16384",
-        "65536"
+//        "16384",
+//        "65536"
     })
     int requestSize;
 
@@ -51,16 +52,15 @@ public class TransportBufferBenchmark {
     }
 
     @Benchmark
-    public int requestLifecycle() {
-        final TransportBuffer.Block claimed = this.buffer.acquire();
-
-        if (claimed == null) {
+    public int bufferWrite() throws IOException {
+        final TransportBuffer.Writer writer = this.buffer.writer();
+        if (writer == null) {
             throw new IllegalStateException("acquire returned null");
         }
-
-        final int written = this.source.readAll(this.buffer, claimed);
-        claimed.release();
-
-        return written;
+        while (true) {
+            if (writer.read(this.source) < 0) break;
+        }
+        writer.release();
+        return writer.totalWritten();
     }
 }

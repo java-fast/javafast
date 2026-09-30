@@ -25,9 +25,9 @@ trait TransportUtils {
         while (current != TransportBuffer.NEXT_NONE && offset < expectedLength) {
             def remaining = expectedLength - offset
             def payload = buffer.blocks[current].payload()
-            def readSize = Math.min(payload.capacity(), remaining)
+            def readSize = Math.min((int) payload.byteSize(), remaining)
             def chunk = new byte[readSize]
-            payload.slice(0, readSize).get(chunk)
+            payload.asByteBuffer().slice(0, readSize).get(chunk)
             System.arraycopy(chunk, 0, bytes, offset, readSize)
             offset += readSize
             current = buffer.getNext(current)
@@ -55,7 +55,7 @@ trait TransportUtils {
         private int chunkIndex = 0
 
         TransportTestSourceImpl(byte[] data, List<Integer> chunkSizes) {
-            this.chunkSizes = chunkSizes
+            this.chunkSizes = new ArrayList<>(chunkSizes) // copy protection since the array can be mutated
             source = MemorySegment.ofArray(data)
         }
 
