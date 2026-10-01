@@ -5,6 +5,7 @@ import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import java.lang.invoke.VarHandle;
+import java.nio.BufferOverflowException;
 import java.nio.ByteBuffer;
 import java.nio.channels.ReadableByteChannel;
 import java.nio.charset.StandardCharsets;
@@ -169,6 +170,7 @@ public final class TransportBuffer implements AutoCloseable {
     public final class Block {
 
         private final Writer writer = new Writer();
+        private final Reader reader = new Reader(this);
 
         private final int index;
         private final MemorySegment segment; // [state][payload][next]
@@ -191,6 +193,10 @@ public final class TransportBuffer implements AutoCloseable {
             return this.writer;
         }
 
+        private Reader reader() {
+            return this.reader;
+        }
+
         /**
          * Payload only. Excludes state bytes and next-index trailer.
          */
@@ -208,6 +214,7 @@ public final class TransportBuffer implements AutoCloseable {
          */
         public void release() {
             this.writer.reset();
+            this.reader.reset();
             int current = this.index;
             while (current != NEXT_NONE) {
                 blocks[current].byteBuffer.clear();
@@ -240,7 +247,7 @@ public final class TransportBuffer implements AutoCloseable {
 
         private Block head;
         private Block current;
-        private int totalWritten;
+        private long totalWritten;
 
         private Writer() {
         }
@@ -266,7 +273,7 @@ public final class TransportBuffer implements AutoCloseable {
                 }
                 final Block next = acquire();
                 if (next == null) {
-                    break;
+                    throw new BufferOverflowException();
                 }
                 this.current.link(next);
                 this.current = next;
@@ -285,12 +292,16 @@ public final class TransportBuffer implements AutoCloseable {
             this.totalWritten = 0;
         }
 
-        public int totalWritten() {
+        public long totalWritten() {
             return this.totalWritten;
         }
 
         Block head() {
             return this.head;
+        }
+
+        Reader reader() {
+            return this.head.reader();
         }
 
     }
@@ -302,19 +313,20 @@ public final class TransportBuffer implements AutoCloseable {
 
         private int currentOffset;
         private long position;
-        private long limit;
 
         private Reader(Block head) {
             this.head = head;
             this.current = this.head;
-            this.limit = head.writer.totalWritten;
         }
 
         void reset() {
             this.current = this.head;
             this.currentOffset = 0;
             this.position = 0;
-            this.limit = this.head.writer.totalWritten;
+        }
+
+        void release() {
+            this.head.release();
         }
 
         public long position() {
@@ -330,17 +342,21 @@ public final class TransportBuffer implements AutoCloseable {
             return this;
         }
 
+        public long limit() {
+            return this.head.writer.totalWritten;
+        }
+
         /**
          * Number of bytes available from the current position.
          */
         public long remaining() {
-            return this.limit - this.position;
+            return limit() - this.position;
         }
 
         public boolean asciiEquals(int offset, String value) {
             final int length = value.length();
 
-            if (offset < 0 || (long) offset + length > this.limit) {
+            if (offset < 0 || (long) offset + length > limit()) {
                 return false;
             }
 
@@ -384,7 +400,7 @@ public final class TransportBuffer implements AutoCloseable {
                 throw new IllegalArgumentException("offset < 0");
             }
 
-            if (offset >= this.limit) {
+            if (offset >= limit()) {
                 return -1;
             }
 
@@ -407,6 +423,55 @@ public final class TransportBuffer implements AutoCloseable {
             return -1;
         }
 
+        public int indexOf(short value, int offset) {
+            if (offset < 0) {
+                throw new IllegalArgumentException("offset < 0");
+            }
+            if (offset >= limit()) {
+                return -1;
+            }
+            locate(offset);
+
+            Block block = this.current;
+            int blockOffset = this.currentOffset;
+            while (block != null) {
+                final ByteBuffer buffer = block.byteBuffer();
+                final int end = buffer.position();
+                for (int i = blockOffset; i < end; i++) {
+                    if (buffer.getShort(i) == value) {
+                        return logicalOffset(block, i);
+                    }
+                }
+                block = block.next();
+                blockOffset = 0;
+            }
+
+            return -1;
+        }
+
+        /**
+         * Relative get
+         */
+        public byte get() {
+            if (this.current == null) {
+                throw new IndexOutOfBoundsException();
+            }
+
+            ByteBuffer buffer = this.current.byteBuffer();
+            if (this.currentOffset >= buffer.position()) {
+                this.current = this.current.next();
+                this.currentOffset = 0;
+                if (this.current == null) {
+                    throw new IndexOutOfBoundsException();
+                }
+                buffer = this.current.byteBuffer();
+            }
+
+            final byte value = buffer.get(this.currentOffset++);
+            this.position++;
+            return value;
+        }
+
         public byte[] getBytes(int offset, int length) {
             if (length < 0) {
                 throw new IllegalArgumentException("length < 0");
@@ -416,7 +481,12 @@ public final class TransportBuffer implements AutoCloseable {
             return result;
         }
 
-        public String getString(int offset, int length) {
+        public String getAscii(int offset, int length) {
+            final byte[] bytes = getBytes(offset, length);
+            return new String(bytes, StandardCharsets.US_ASCII);
+        }
+
+        public String getUtf8(int offset, int length) {
             final byte[] bytes = getBytes(offset, length);
             return new String(bytes, StandardCharsets.UTF_8);
         }
@@ -426,7 +496,7 @@ public final class TransportBuffer implements AutoCloseable {
                 throw new IndexOutOfBoundsException();
             }
 
-            if ((long) offset + length > this.limit) {
+            if ((long) offset + length > limit()) {
                 throw new IndexOutOfBoundsException("Not enough data: offset=" + offset + ", length=" + length);
             }
 
@@ -463,7 +533,7 @@ public final class TransportBuffer implements AutoCloseable {
          * Returns null when the range crosses a block boundary.
          */
         public MemorySegment segment(int offset, int length) {
-            if (length < 0 || offset < 0 || (long) offset + length > this.limit) {
+            if (length < 0 || offset < 0 || (long) offset + length > limit()) {
                 throw new IndexOutOfBoundsException();
             }
 
