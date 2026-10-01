@@ -7,6 +7,7 @@ import java.lang.foreign.ValueLayout;
 import java.lang.invoke.VarHandle;
 import java.nio.ByteBuffer;
 import java.nio.channels.ReadableByteChannel;
+import java.nio.charset.StandardCharsets;
 
 /**
  * Fixed-size block ring buffer for transport/request execution.
@@ -167,7 +168,7 @@ public final class TransportBuffer implements AutoCloseable {
 
     public final class Block {
 
-        private final Writer writer = new Writer(TransportBuffer.this);
+        private final Writer writer = new Writer();
 
         private final int index;
         private final MemorySegment segment; // [state][payload][next]
@@ -206,19 +207,27 @@ public final class TransportBuffer implements AutoCloseable {
          * No CAS is necessary: caller owns the entire chain
          */
         public void release() {
+            this.writer.reset();
             int current = this.index;
             while (current != NEXT_NONE) {
+                blocks[current].byteBuffer.clear();
                 final int next = getNext(current);
                 clearNext(current);
                 setStateFree(current);
-                blocks[current].byteBuffer.clear();
                 current = next;
             }
-            this.writer.reset();
         }
 
         public void link(Block next) {
             this.segment.set(ValueLayout.JAVA_INT_UNALIGNED, nextBlockOffset, next.index);
+        }
+
+        public Block next() {
+            final int next = getNext(this.index);
+            if (next == NEXT_NONE) {
+                return null;
+            }
+            return blocks[next];
         }
 
         @Override
@@ -229,26 +238,23 @@ public final class TransportBuffer implements AutoCloseable {
 
     public final class Writer {
 
-        private final TransportBuffer owner;
-
         private Block head;
         private Block current;
         private int totalWritten;
 
-        private Writer(TransportBuffer owner) {
-            this.owner = owner;
+        private Writer() {
         }
 
         public int read(ReadableByteChannel channel) throws IOException {
             if (this.current == null) { // try acquiring the first block
-                this.current = this.owner.acquire();
+                this.current = acquire();
                 if (this.current == null) {
                     return 0;
                 }
                 this.head = this.current;
             }
             int read = 0;
-            for (;;) {
+            for (; ; ) {
                 final ByteBuffer target = this.current.byteBuffer;
                 final int written = channel.read(target);
                 if (written < 0) {
@@ -258,7 +264,7 @@ public final class TransportBuffer implements AutoCloseable {
                 if (target.hasRemaining()) {
                     break;
                 }
-                final Block next = this.owner.acquire();
+                final Block next = acquire();
                 if (next == null) {
                     break;
                 }
@@ -289,6 +295,226 @@ public final class TransportBuffer implements AutoCloseable {
 
     }
 
+    public final class Reader {
 
+        private final Block head;
+        private Block current;
 
+        private int currentOffset;
+        private long position;
+        private long limit;
+
+        private Reader(Block head) {
+            this.head = head;
+            this.current = this.head;
+            this.limit = head.writer.totalWritten;
+        }
+
+        void reset() {
+            this.current = this.head;
+            this.currentOffset = 0;
+            this.position = 0;
+            this.limit = this.head.writer.totalWritten;
+        }
+
+        public long position() {
+            return this.position;
+        }
+
+        public Reader position(long position) {
+            if (position < 0) {
+                throw new IllegalArgumentException("position < 0");
+            }
+            this.position = position;
+            locate(position);
+            return this;
+        }
+
+        /**
+         * Number of bytes available from the current position.
+         */
+        public long remaining() {
+            return this.limit - this.position;
+        }
+
+        public boolean asciiEquals(int offset, String value) {
+            final int length = value.length();
+
+            if (offset < 0 || (long) offset + length > this.limit) {
+                return false;
+            }
+
+            locate(offset);
+
+            int remaining = length;
+            int stringOffset = 0;
+
+            Block block = this.current;
+            int blockOffset = this.currentOffset;
+
+            while (remaining > 0) {
+                final ByteBuffer buffer = block.byteBuffer();
+                final int available = buffer.position() - blockOffset;
+                final int count = Math.min(available, remaining);
+
+                for (int i = 0; i < count; i++) {
+                    if ((buffer.get(blockOffset + i) & 0xff) != value.charAt(stringOffset + i)) {
+                        return false;
+                    }
+                }
+
+                remaining -= count;
+                stringOffset += count;
+                blockOffset += count;
+
+                if (remaining > 0) {
+                    block = block.next();
+                    blockOffset = 0;
+                    if (block == null) {
+                        return false;
+                    }
+                }
+            }
+
+            return true;
+        }
+
+        public int indexOf(byte value, int offset) {
+            if (offset < 0) {
+                throw new IllegalArgumentException("offset < 0");
+            }
+
+            if (offset >= this.limit) {
+                return -1;
+            }
+
+            locate(offset);
+
+            Block block = this.current;
+            int blockOffset = this.currentOffset;
+            while (block != null) {
+                final ByteBuffer buffer = block.byteBuffer();
+                final int end = buffer.position();
+                for (int i = blockOffset; i < end; i++) {
+                    if (buffer.get(i) == value) {
+                        return logicalOffset(block, i);
+                    }
+                }
+                block = block.next();
+                blockOffset = 0;
+            }
+
+            return -1;
+        }
+
+        public byte[] getBytes(int offset, int length) {
+            if (length < 0) {
+                throw new IllegalArgumentException("length < 0");
+            }
+            final byte[] result = new byte[length];
+            copyTo(offset, result, 0, length);
+            return result;
+        }
+
+        public String getString(int offset, int length) {
+            final byte[] bytes = getBytes(offset, length);
+            return new String(bytes, StandardCharsets.UTF_8);
+        }
+
+        public void copyTo(int offset, byte[] destination, int destinationOffset, int length) {
+            if (length < 0 || offset < 0 || destinationOffset < 0 || destinationOffset + length > destination.length) {
+                throw new IndexOutOfBoundsException();
+            }
+
+            if ((long) offset + length > this.limit) {
+                throw new IndexOutOfBoundsException("Not enough data: offset=" + offset + ", length=" + length);
+            }
+
+            locate(offset);
+
+            Block block = this.current;
+            int blockOffset = this.currentOffset;
+            int remaining = length;
+            int dest = destinationOffset;
+            while (block != null && remaining > 0) {
+                final ByteBuffer buffer = block.byteBuffer();
+                final int available = buffer.position() - blockOffset;
+                final int count = Math.min(available, remaining);
+
+                final ByteBuffer source = buffer.duplicate();
+                source.position(blockOffset);
+                source.limit(blockOffset + count);
+
+                source.get(destination, dest, count);
+
+                remaining -= count;
+                dest += count;
+                blockOffset += count;
+
+                if (remaining > 0) {
+                    block = block.next();
+                    blockOffset = 0;
+                }
+            }
+        }
+
+        /**
+         * Returns a zero-copy MemorySegment if the requested range resides entirely inside one block.
+         * Returns null when the range crosses a block boundary.
+         */
+        public MemorySegment segment(int offset, int length) {
+            if (length < 0 || offset < 0 || (long) offset + length > this.limit) {
+                throw new IndexOutOfBoundsException();
+            }
+
+            locate(offset);
+
+            final ByteBuffer buffer = this.current.byteBuffer();
+            if (this.currentOffset + length > buffer.position()) {
+                return null;
+            }
+            return this.current.payload().asSlice(this.currentOffset, length);
+        }
+
+        private void locate(long target) {
+            if (target == this.position && this.current != null) {
+                return;
+            }
+
+            Block block = this.head;
+            long logical = 0;
+            while (block != null) {
+                final int size = block.byteBuffer().position();
+                if (target < logical + size) {
+                    this.current = block;
+                    this.currentOffset = (int) (target - logical);
+                    this.position = target;
+                    return;
+                }
+                logical += size;
+                block = block.next();
+            }
+
+            if (target == logical) {
+                this.current = null;
+                this.currentOffset = 0;
+                this.position = target;
+                return;
+            }
+
+            throw new IndexOutOfBoundsException("Position outside of buffer: " + target);
+        }
+
+        private int logicalOffset(Block target, int offset) {
+            int result = offset;
+            Block block = this.head;
+            while (block != target) {
+                // target is always in the chain
+                // so block cannot be null until target
+                result += block.byteBuffer().position();
+                block = block.next();
+            }
+            return result;
+        }
+    }
 }

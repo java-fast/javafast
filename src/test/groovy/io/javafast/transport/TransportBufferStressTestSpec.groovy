@@ -39,17 +39,19 @@ class TransportBufferStressTestSpec extends Specification implements TransportUt
                             break
                         }
                         def claim = writeEventually(buffer, bytes(11000 + id, payloadLength), [11, 13, 17, 19, 23])
+                        final localClaim = claim
                         consumerPool.submit { // publish to consumer threads
                             try {
-                                consumed.add(requestKey(readBytes(buffer, claim, payloadLength)))
-                                claim.release()
-                                ac.evaluate { assert true }
-                            } catch (Exception e) {
+                                consumed.add(requestKey(readBytes(buffer, localClaim, payloadLength)))
+                            } catch (Throwable e) {
                                 e.printStackTrace()
+                            } finally {
+                                localClaim.release()
                             }
+                            ac.evaluate { assert true }
                         }
                     }
-                } catch (Exception e) {
+                } catch (Throwable e) {
                     e.printStackTrace()
                 }
             }
@@ -95,23 +97,25 @@ class TransportBufferStressTestSpec extends Specification implements TransportUt
                             break
                         }
                         def claim = writeEventually(buffer, bytes(12000 + id, payloadLength), [7, 9, 13, 17, 21, 25])
+                        final localClaim = claim
                         pool.submit {
                             try {
-                                def actual = readBytes(buffer, claim, payloadLength)
+                                def actual = readBytes(buffer, localClaim, payloadLength)
                                 def key = requestKey(actual)
                                 def expected = expectedPayloads[key]
                                 if (expected == null || !Arrays.equals(expected, actual)) {
                                     mismatches.incrementAndGet()
                                 }
                                 consumed.add(key)
-                                claim.release()
-                                ac.evaluate { assert true }
-                            } catch (Exception e) {
+                            } catch (Throwable e) {
                                 e.printStackTrace()
+                            } finally {
+                                localClaim.release()
                             }
+                            ac.evaluate { assert true }
                         }
                     }
-                } catch (Exception e) {
+                } catch (Throwable e) {
                     e.printStackTrace()
                 }
             }
@@ -152,18 +156,20 @@ class TransportBufferStressTestSpec extends Specification implements TransportUt
                             break
                         }
                         def claim = writeEventually(buffer, bytes(13000 + id, payloadLength), [9, 14, 18, 22, 27])
+                        final localClaim = claim
                         pool.submit {
                             try {
-                                readBytes(buffer, claim, payloadLength)
-                                claim.release()
+                                readBytes(buffer, localClaim, payloadLength)
                                 consumed.incrementAndGet()
-                                ac.evaluate { assert true }
-                            } catch (Exception e) {
+                            } catch (Throwable e) {
                                 e.printStackTrace()
+                            } finally {
+                                localClaim.release()
                             }
+                            ac.evaluate { assert true }
                         }
                     }
-                } catch (Exception e) {
+                } catch (Throwable e) {
                     e.printStackTrace()
                 }
             }
