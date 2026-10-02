@@ -68,7 +68,7 @@ public final class DefaultRouting implements RoutingApi {
     }
 
     public void handle(Context context) throws Exception {
-        ((ContextInternal) context).setContextPath(this.contextPath);
+        ((RequestContext) context).setContextPath(this.contextPath);
         this.router.handle(context);
     }
 

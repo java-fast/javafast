@@ -1,81 +1,29 @@
 package io.javafast.transport;
 
 import com.sun.net.httpserver.HttpServer;
-import io.javafast.runtime.ApplicationRuntime;
 import io.javafast.JavaFastRuntime;
-import io.javafast.http.HttpExchange;
-import io.javafast.internal.DefaultHttpExchangeHandler;
+import io.javafast.internal.DefaultHttpRequestDispatcher;
+import io.javafast.internal.RequestContextPool;
+import io.javafast.runtime.ApplicationRuntime;
 
 import java.io.IOException;
-import java.io.InputStream;
-import java.io.OutputStream;
 import java.io.UncheckedIOException;
 import java.net.InetSocketAddress;
 import java.util.concurrent.Executors;
 
 public class JdkTestTransport implements Transport {
 
-    private final ExchangeHandler<HttpExchange> handler;
+    private final TransportBuffer buffer;
+    private final RequestDispatcher handler;
+    private final Http1RequestEncoder encoder = new Http1RequestEncoder();
 
     private HttpServer server;
     private TransportConfig config;
 
     public JdkTestTransport() {
         final ApplicationRuntime runtime = JavaFastRuntime.current();
-        this.handler = new DefaultHttpExchangeHandler(runtime.routing(), runtime.appData());
-    }
-
-    private static class JdkHttpExchange implements HttpExchange {
-
-        com.sun.net.httpserver.HttpExchange exchange;
-
-        private JdkHttpExchange(com.sun.net.httpserver.HttpExchange exchange) {
-            this.exchange = exchange;
-        }
-
-        @Override
-        public String method() {
-            return this.exchange.getRequestMethod();
-        }
-
-        @Override
-        public String uri() {
-            return this.exchange.getRequestURI().toString();
-        }
-
-        @Override
-        public String header(String name) {
-            return this.exchange.getRequestHeaders().getFirst(name);
-        }
-
-        @Override
-        public InputStream requestBody() {
-            return this.exchange.getRequestBody();
-        }
-
-        @Override
-        public void status(int status) {
-            try {
-                this.exchange.sendResponseHeaders(status, 0);
-            } catch (IOException e) {
-                throw new UncheckedIOException(e);
-            }
-        }
-
-        @Override
-        public void header(String name, String value) {
-            this.exchange.getResponseHeaders().set(name, value);
-        }
-
-        @Override
-        public OutputStream responseBody() {
-            return this.exchange.getResponseBody();
-        }
-
-        @Override
-        public void close() {
-            this.exchange.close();
-        }
+        this.handler = new DefaultHttpRequestDispatcher(RequestContextPool.create(128), runtime.routing(), runtime.appData());
+        this.buffer = TransportBuffer.create(1024, 1024); // aka 1MB
     }
 
     @Override
@@ -89,11 +37,16 @@ public class JdkTestTransport implements Transport {
         }
 
         this.server.createContext("/", exchange -> {
-            final var adaptedExchange = new JdkHttpExchange(exchange);
+            TransportBuffer.Writer writer = null;
             try {
-                this.handler.handle(adaptedExchange);
+                writer = this.encoder.encode(exchange, this.buffer);
+                this.handler.dispatch(writer.reader());
             } catch (Exception e) {
                 throw new RuntimeException(e);
+            } finally {
+                if (writer != null) {
+                    writer.release();
+                }
             }
         });
 

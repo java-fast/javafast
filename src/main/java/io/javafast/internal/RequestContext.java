@@ -4,7 +4,8 @@ import io.javafast.config.AppData;
 import io.javafast.http.*;
 import io.javafast.json.JsonMapper;
 import io.javafast.plugin.ContextPlugin;
-import io.javafast.http.HttpExchange;
+import io.javafast.transport.Http1RequestDecoder;
+import io.javafast.transport.TransportBuffer;
 import io.javafast.validation.BodyValidator;
 import io.javafast.validation.Validator;
 
@@ -19,14 +20,20 @@ import java.util.Objects;
 import java.util.function.Function;
 import java.util.stream.Stream;
 
-final class ContextInternal implements Context {
+/**
+ * Internal request context
+ */
+final class RequestContext implements Context {
 
-    private final AppData appData;
-    private final HttpExchange exchange;
+    // TODO can be singleton!
+    private final Http1RequestDecoder decoder = new Http1RequestDecoder();
 
-    private final HttpMethod method;
-    private final String path;
-    private final String queryString;
+    private TransportBuffer.Reader reader;
+    private AppData appData;
+
+    private HttpMethod method;
+    private String path;
+    private String queryString;
 
     private String contextPath;
     private PathParams pathParamMap;
@@ -38,11 +45,24 @@ final class ContextInternal implements Context {
 
     private boolean skipRemainingHandlers = false;
 
-    ContextInternal(AppData appData, HttpExchange exchange) {
-        this.appData = appData;
-        this.exchange = exchange;
-        this.method = HttpMethod.of(exchange.method());
+    static String header(TransportBuffer.Reader block, String header) {
+        // TODO read header from block
+        return "";
+    }
 
+    static InputStream requestBody(TransportBuffer.Reader block) {
+        // TODO read request body from block
+        return InputStream.nullInputStream();
+    }
+
+    static OutputStream responseBody(TransportBuffer.Reader block) {
+        // TODO write response body to block or socket?
+        return OutputStream.nullOutputStream();
+    }
+
+    RequestContext() {
+        // this.method = HttpMethod.of(exchange.method());
+        /*
         final String uri = exchange.uri();
         final int queryIndex = uri.indexOf('?');
         if (queryIndex >= 0) {
@@ -52,6 +72,23 @@ final class ContextInternal implements Context {
             this.path = uri;
             this.queryString = "";
         }
+        */
+    }
+
+    public void reset(TransportBuffer.Reader reader, AppData appData) {
+        this.reader = reader;
+        this.appData = appData;
+        this.method = null;
+        this.path = null;
+        this.queryString = null;
+        this.contextPath = null;
+        this.pathParamMap = null;
+        this.headerMap = null;
+        this.result = null;
+        this.resultInputStream = null;
+        this.skipRemainingHandlers = false;
+
+        this.decoder.parse(reader);
     }
 
     @Override
@@ -66,12 +103,12 @@ final class ContextInternal implements Context {
 
     @Override
     public HttpMethod method() {
-        return this.method;
+        return this.decoder.getMethod();
     }
 
     @Override
     public String path() {
-        return this.path;
+        return this.decoder.getTarget();
     }
 
     @Override
@@ -152,7 +189,7 @@ final class ContextInternal implements Context {
     @Override
     public byte[] bodyAsBytes() {
         // TODO optimize later via reusing a buffer byte[]
-        try (final var in = this.exchange.requestBody()){
+        try (final var in = requestBody(this.reader)){
             return in.readAllBytes();
         } catch (IOException e) {
             throw new UncheckedIOException(e);
@@ -279,7 +316,7 @@ final class ContextInternal implements Context {
         if (this.headerMap != null && this.headerMap.containsKey(name)) {
             return this.headerMap.get(name);
         }
-        return this.exchange.header(name);
+        return header(this.reader, name);
     }
 
     @Override
@@ -354,7 +391,7 @@ final class ContextInternal implements Context {
 
     @Override
     public OutputStream outputStream() {
-        return this.exchange.responseBody();
+        return responseBody(this.reader);
     }
 
     @Override
@@ -506,18 +543,18 @@ final class ContextInternal implements Context {
     }
 
     void writeResponseToExchange() throws Exception {
-        if (this.exchange == null) {
+        if (this.reader == null) {
             return;
         }
         if (this.headerMap != null) { // write response headers
-            this.headerMap.forEach(this.exchange::header);
+            // TODO write headers to response
         }
-        this.exchange.status(this.statusCode);
+        // this.exchange.status(this.statusCode);
         if(this.method == HttpMethod.HEAD) {
             return; // no body for HEAD
         }
         final var stream = resultInputStream();
-        try (stream; final var out = this.exchange.responseBody()) {
+        try (stream; final var out = responseBody(this.reader)) {
             stream.transferTo(out);
         }
     }

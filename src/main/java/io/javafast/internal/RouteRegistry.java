@@ -90,7 +90,7 @@ final class RouteRegistry {
             if (match != null) {
                 state.routeMatch.setRoute(route);
                 return state.routeMatch;
-            };
+            }
         }
         return null;
     }

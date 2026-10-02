@@ -40,19 +40,19 @@ final class Router {
         this.registry.findAll(this.routerState, HandlerPhase.BEFORE_MATCHED, ctx.path(), m -> {
             // if beforeMatched has no path params, we inherit route's path params instead
             final var effective = m.patternMatch.params.isEmpty() ? match.patternMatch.params : m.patternMatch.params;
-            ((ContextInternal) ctx).setPathParamMap(effective);
+            ((RequestContext) ctx).setPathParamMap(effective);
             m.route().handler().handle(ctx);
             throwIfHandlersSkipped(ctx);
         });
 
-        ((ContextInternal) ctx).setPathParamMap(match.patternMatch.params);
+        ((RequestContext) ctx).setPathParamMap(match.patternMatch.params);
         match.route().handler().handle(ctx);
         if (skipRemainingHandlers(ctx)) return;
 
         this.registry.findAll(this.routerState, HandlerPhase.AFTER_MATCHED, ctx.path(), m -> {
             // if afterMatched has no path params, we inherit route's path params instead
             final var effective = m.patternMatch.params.isEmpty() ? match.patternMatch.params : m.patternMatch.params;
-            ((ContextInternal) ctx).setPathParamMap(effective);
+            ((RequestContext) ctx).setPathParamMap(effective);
             m.route().handler().handle(ctx);
             throwIfHandlersSkipped(ctx);
         });
@@ -68,7 +68,7 @@ final class Router {
     }
 
     private static boolean skipRemainingHandlers(Context ctx) {
-        return ((ContextInternal)ctx).isSkipRemainingHandlers();
+        return ((RequestContext)ctx).isSkipRemainingHandlers();
     }
 
     private static void throwIfHandlersSkipped(Context ctx) {

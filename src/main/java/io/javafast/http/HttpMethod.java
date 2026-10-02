@@ -29,7 +29,7 @@ public record HttpMethod(int key, String name) {
         if (key > MAX_COUNT) throw new IllegalArgumentException("HTTP method index must not be greater than " + MAX_COUNT);
         if (name == null || name.isEmpty()) throw new IllegalArgumentException("HTTP method must not be empty");
         for (int i = 0; i < name.length(); i++) {
-            char c = name.charAt(i);
+            final char c = name.charAt(i);
             if (c < 'A' || c > 'Z') throw new IllegalArgumentException("Invalid HTTP method: " + name);
         }
     }

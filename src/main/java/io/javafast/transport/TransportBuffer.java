@@ -1,6 +1,7 @@
 package io.javafast.transport;
 
 import java.io.IOException;
+import java.io.Reader;
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
@@ -193,7 +194,7 @@ public final class TransportBuffer implements AutoCloseable {
             return this.writer;
         }
 
-        private Reader reader() {
+        Reader reader() {
             return this.reader;
         }
 
@@ -296,12 +297,12 @@ public final class TransportBuffer implements AutoCloseable {
             return this.totalWritten;
         }
 
-        Block head() {
-            return this.head;
+        public Reader reader() {
+            return this.head.reader();
         }
 
-        Reader reader() {
-            return this.head.reader();
+        Block head() {
+            return this.head;
         }
 
     }
@@ -319,12 +320,6 @@ public final class TransportBuffer implements AutoCloseable {
             this.current = this.head;
         }
 
-        void reset() {
-            this.current = this.head;
-            this.currentOffset = 0;
-            this.position = 0;
-        }
-
         void release() {
             this.head.release();
         }
@@ -337,64 +332,340 @@ public final class TransportBuffer implements AutoCloseable {
             if (position < 0) {
                 throw new IllegalArgumentException("position < 0");
             }
-            this.position = position;
             locate(position);
             return this;
+        }
+
+        public int written(Block block) {
+            return block.byteBuffer.position();
         }
 
         public long limit() {
             return this.head.writer.totalWritten;
         }
 
-        /**
-         * Number of bytes available from the current position.
-         */
         public long remaining() {
             return limit() - this.position;
         }
 
-        public boolean asciiEquals(int offset, String value) {
+        public boolean hasRemaining() {
+            return this.position < limit();
+        }
+
+        // -------------------------------------------------------------------------
+        // Cursor
+        // -------------------------------------------------------------------------
+
+        /**
+         * Returns the next byte without advancing the cursor.
+         */
+        public byte peek() {
+            ensureAvailable();
+            return this.current.payload().get(ValueLayout.JAVA_BYTE, this.currentOffset);
+        }
+
+        /**
+         * Returns the next byte and advances the cursor by one.
+         */
+        public byte get() {
+            ensureAvailable();
+
+            final byte value =
+                this.current.payload().get(ValueLayout.JAVA_BYTE, this.currentOffset);
+
+            this.currentOffset++;
+            this.position++;
+
+            return value;
+        }
+
+        public int getUnsignedByte() {
+            return get() & 0xff;
+        }
+
+        /**
+         * Reads a big-endian short and advances by two bytes.
+         * Handles block boundaries.
+         */
+        public short getShort() {
+            if (remaining() < 2) {
+                throw new IndexOutOfBoundsException("Not enough data");
+            }
+
+            final MemorySegment segment = this.current.payload();
+            if (this.currentOffset + 2 <= written(this.current)) {
+                final short value = segment.get(ValueLayout.JAVA_SHORT_UNALIGNED, this.currentOffset);
+                this.currentOffset += 2;
+                this.position += 2;
+                return value;
+            }
+
+            // Cross-block
+            final int high = getUnsignedByte();
+            final int low = getUnsignedByte();
+
+            return (short) ((high << 8) | low);
+        }
+
+        /**
+         * Reads a big-endian int and advances by four bytes.
+         * Handles block boundaries.
+         */
+        public int getInt() {
+            if (remaining() < 4) {
+                throw new IndexOutOfBoundsException("Not enough data");
+            }
+
+            final MemorySegment segment = this.current.payload();
+            if (this.currentOffset + 4 <= written(this.current)) {
+                final int value = segment.get(ValueLayout.JAVA_INT_UNALIGNED, this.currentOffset);
+                this.currentOffset += 4;
+                this.position += 4;
+                return value;
+            }
+
+            // Cross-block
+            int value = getUnsignedByte();
+            value = (value << 8) | getUnsignedByte();
+            value = (value << 8) | getUnsignedByte();
+            value = (value << 8) | getUnsignedByte();
+
+            return value;
+        }
+
+        /**
+         * Reads a big-endian long and advances by eight bytes.
+         * Handles block boundaries.
+         */
+        public long getLong() {
+            if (remaining() < 8) {
+                throw new IndexOutOfBoundsException("Not enough data");
+            }
+
+            final MemorySegment segment = this.current.payload();
+            if (this.currentOffset + 8 <= written(this.current)) {
+                final long value = segment.get(ValueLayout.JAVA_LONG_UNALIGNED, this.currentOffset);
+                this.currentOffset += 8;
+                this.position += 8;
+                return value;
+            }
+
+            // Cross-block
+            long value = getUnsignedByte();
+            value = (value << 8) | getUnsignedByte();
+            value = (value << 8) | getUnsignedByte();
+            value = (value << 8) | getUnsignedByte();
+            value = (value << 8) | getUnsignedByte();
+            value = (value << 8) | getUnsignedByte();
+            value = (value << 8) | getUnsignedByte();
+            value = (value << 8) | getUnsignedByte();
+
+            return value;
+        }
+
+        /**
+         * Advances the cursor by length bytes.
+         */
+        public Reader skip(int length) {
+            if (length < 0) {
+                throw new IllegalArgumentException("length < 0");
+            }
+            if ((long) length > remaining()) {
+                throw new IndexOutOfBoundsException("Not enough data: length=" + length + ", remaining=" + remaining());
+            }
+            advance(length);
+            return this;
+        }
+
+        /**
+         * Moves the cursor to the beginning.
+         */
+        void reset() {
+            this.current = this.head;
+            this.currentOffset = 0;
+            this.position = 0;
+        }
+
+        /**
+         * Moves the cursor to the end.
+         */
+        public Reader skipRemaining() {
+            this.current = null;
+            this.currentOffset = 0;
+            this.position = limit();
+            return this;
+        }
+
+        // -------------------------------------------------------------------------
+        // Matching
+        // -------------------------------------------------------------------------
+
+        /**
+         * Checks whether the bytes at the current position match value.
+         */
+        public boolean matchesAscii(String value) {
             final int length = value.length();
 
-            if (offset < 0 || (long) offset + length > limit()) {
+            if ((long) length > remaining()) {
                 return false;
             }
 
-            locate(offset);
-
-            int remaining = length;
-            int stringOffset = 0;
+            if (this.current == null) {
+                return false;
+            }
 
             Block block = this.current;
             int blockOffset = this.currentOffset;
+            int valueOffset = 0;
+            int remaining = length;
 
-            while (remaining > 0) {
-                final ByteBuffer buffer = block.byteBuffer();
-                final int available = buffer.position() - blockOffset;
+            while (block != null && remaining > 0) {
+                final MemorySegment segment = block.payload();
+                final int available = written(block) - blockOffset;
                 final int count = Math.min(available, remaining);
 
                 for (int i = 0; i < count; i++) {
-                    if ((buffer.get(blockOffset + i) & 0xff) != value.charAt(stringOffset + i)) {
+                    if ((segment.get(ValueLayout.JAVA_BYTE, blockOffset + i) & 0xff) != value.charAt(valueOffset + i)) {
                         return false;
                     }
                 }
 
                 remaining -= count;
-                stringOffset += count;
+                valueOffset += count;
                 blockOffset += count;
 
                 if (remaining > 0) {
                     block = block.next();
                     blockOffset = 0;
-                    if (block == null) {
-                        return false;
-                    }
                 }
             }
 
             return true;
         }
 
+        /**
+         * Consumes one byte if it matches.
+         */
+        public boolean consume(byte expected) {
+            if (!hasRemaining()) {
+                return false;
+            }
+
+            if (peek() != expected) {
+                return false;
+            }
+
+            advance(1);
+            return true;
+        }
+
+        /**
+         * Consumes two bytes if they match.
+         */
+        public boolean consume(short expected) {
+            if (remaining() < 2) {
+                return false;
+            }
+
+            if (peekShort() != expected) {
+                return false;
+            }
+
+            advance(2);
+            return true;
+        }
+
+        /**
+         * Consumes an ASCII string if it matches.
+         */
+        public boolean consumeAscii(String value) {
+            if (!matchesAscii(value)) {
+                return false;
+            }
+            advance(value.length());
+            return true;
+        }
+
+        // -------------------------------------------------------------------------
+        // Search
+        // -------------------------------------------------------------------------
+
+        /**
+         * Finds value starting from the current cursor position.
+         * Does not modify the cursor.
+         */
+        public int indexOf(byte value) {
+            Block block = this.current;
+            int blockOffset = this.currentOffset;
+            long logicalPosition = this.position;
+
+            while (block != null) {
+                final MemorySegment segment = block.payload();
+                final int end = written(block);
+
+                for (int i = blockOffset; i < end; i++) {
+                    if (segment.get(ValueLayout.JAVA_BYTE, i) == value) {
+                        return (int) (logicalPosition + (i - blockOffset));
+                    }
+                }
+
+                logicalPosition += end - blockOffset;
+                block = block.next();
+                blockOffset = 0;
+            }
+
+            return -1;
+        }
+
+        /**
+         * Finds a two-byte value starting from the current cursor position.
+         * Handles block boundaries.
+         */
+        public int indexOf(short value) {
+            Block block = this.current;
+            int blockOffset = this.currentOffset;
+            long logicalPosition = this.position;
+
+            final byte first = (byte) (value >>> 8);
+            final byte second = (byte) value;
+
+            while (block != null) {
+                final MemorySegment segment = block.payload();
+                final int end = written(block);
+
+                // Fast path: both bytes reside in this block.
+                for (int i = blockOffset; i < end - 1; i++) {
+                    if (segment.get(ValueLayout.JAVA_BYTE, i) == first &&
+                        segment.get(ValueLayout.JAVA_BYTE, i + 1) == second) {
+                        return (int) (logicalPosition + (i - blockOffset));
+                    }
+                }
+
+                // Slow path: first byte is the last byte of this block.
+                if (blockOffset < end &&
+                    segment.get(ValueLayout.JAVA_BYTE, end - 1) == first) {
+                    final Block next = block.next();
+                    if (next != null) {
+                        final MemorySegment nextSegment = next.payload();
+                        if (written(next) > 0 &&
+                            nextSegment.get(ValueLayout.JAVA_BYTE, 0) == second) {
+                            return (int) (logicalPosition + (end - blockOffset - 1));
+                        }
+                    }
+                }
+
+                logicalPosition += end - blockOffset;
+                block = block.next();
+                blockOffset = 0;
+            }
+
+            return -1;
+        }
+
+        /**
+         * Finds value starting at an absolute offset.
+         * Does not modify the cursor.
+         */
         public int indexOf(byte value, int offset) {
             if (offset < 0) {
                 throw new IllegalArgumentException("offset < 0");
@@ -404,73 +675,19 @@ public final class TransportBuffer implements AutoCloseable {
                 return -1;
             }
 
+            final long oldPosition = this.position;
+
             locate(offset);
+            final int result = indexOf(value);
 
-            Block block = this.current;
-            int blockOffset = this.currentOffset;
-            while (block != null) {
-                final ByteBuffer buffer = block.byteBuffer();
-                final int end = buffer.position();
-                for (int i = blockOffset; i < end; i++) {
-                    if (buffer.get(i) == value) {
-                        return logicalOffset(block, i);
-                    }
-                }
-                block = block.next();
-                blockOffset = 0;
-            }
+            locate(oldPosition);
 
-            return -1;
+            return result;
         }
 
-        public int indexOf(short value, int offset) {
-            if (offset < 0) {
-                throw new IllegalArgumentException("offset < 0");
-            }
-            if (offset >= limit()) {
-                return -1;
-            }
-            locate(offset);
-
-            Block block = this.current;
-            int blockOffset = this.currentOffset;
-            while (block != null) {
-                final ByteBuffer buffer = block.byteBuffer();
-                final int end = buffer.position();
-                for (int i = blockOffset; i < end; i++) {
-                    if (buffer.getShort(i) == value) {
-                        return logicalOffset(block, i);
-                    }
-                }
-                block = block.next();
-                blockOffset = 0;
-            }
-
-            return -1;
-        }
-
-        /**
-         * Relative get
-         */
-        public byte get() {
-            if (this.current == null) {
-                throw new IndexOutOfBoundsException();
-            }
-
-            ByteBuffer buffer = this.current.byteBuffer();
-            if (this.currentOffset >= buffer.position()) {
-                this.current = this.current.next();
-                this.currentOffset = 0;
-                if (this.current == null) {
-                    throw new IndexOutOfBoundsException();
-                }
-                buffer = this.current.byteBuffer();
-            }
-
-            final byte value = buffer.get(this.currentOffset++);
-            this.position++;
-            return value;
-        }
+        // -------------------------------------------------------------------------
+        // Relative string/bytes
+        // -------------------------------------------------------------------------
 
         public byte[] getBytes(int offset, int length) {
             if (length < 0) {
@@ -491,6 +708,28 @@ public final class TransportBuffer implements AutoCloseable {
             return new String(bytes, StandardCharsets.UTF_8);
         }
 
+        /**
+         * Reads an ASCII string from the current position and advances.
+         */
+        public String getAscii(int length) {
+            final String value = getAscii((int) this.position, length);
+            advance(length);
+            return value;
+        }
+
+        /**
+         * Reads a UTF-8 string from the current position and advances.
+         */
+        public String getUtf8(int length) {
+            final String value = getUtf8((int) this.position, length);
+            advance(length);
+            return value;
+        }
+
+        // -------------------------------------------------------------------------
+        // Copy / zero-copy
+        // -------------------------------------------------------------------------
+
         public void copyTo(int offset, byte[] destination, int destinationOffset, int length) {
             if (length < 0 || offset < 0 || destinationOffset < 0 || destinationOffset + length > destination.length) {
                 throw new IndexOutOfBoundsException();
@@ -506,16 +745,19 @@ public final class TransportBuffer implements AutoCloseable {
             int blockOffset = this.currentOffset;
             int remaining = length;
             int dest = destinationOffset;
+
             while (block != null && remaining > 0) {
-                final ByteBuffer buffer = block.byteBuffer();
-                final int available = buffer.position() - blockOffset;
+                final MemorySegment segment = block.payload();
+                final int available = written(block) - blockOffset;
                 final int count = Math.min(available, remaining);
 
-                final ByteBuffer source = buffer.duplicate();
-                source.position(blockOffset);
-                source.limit(blockOffset + count);
-
-                source.get(destination, dest, count);
+                MemorySegment.copy(
+                    segment,
+                    blockOffset,
+                    MemorySegment.ofArray(destination),
+                    destinationOffset + dest,
+                    count
+                );
 
                 remaining -= count;
                 dest += count;
@@ -529,8 +771,7 @@ public final class TransportBuffer implements AutoCloseable {
         }
 
         /**
-         * Returns a zero-copy MemorySegment if the requested range resides entirely inside one block.
-         * Returns null when the range crosses a block boundary.
+         * Zero-copy only when the range resides entirely inside one block.
          */
         public MemorySegment segment(int offset, int length) {
             if (length < 0 || offset < 0 || (long) offset + length > limit()) {
@@ -539,52 +780,119 @@ public final class TransportBuffer implements AutoCloseable {
 
             locate(offset);
 
-            final ByteBuffer buffer = this.current.byteBuffer();
-            if (this.currentOffset + length > buffer.position()) {
+            if (this.current == null) {
+                return length == 0 ? MemorySegment.NULL : null;
+            }
+
+            final MemorySegment segment = this.current.payload();
+            if (this.currentOffset + length > written(this.current)) {
                 return null;
             }
-            return this.current.payload().asSlice(this.currentOffset, length);
+
+            return segment.asSlice(this.currentOffset, length);
+        }
+
+        // -------------------------------------------------------------------------
+        // Internal cursor mechanics
+        // -------------------------------------------------------------------------
+
+        private void ensureAvailable() {
+            if (this.current == null) {
+                throw new IndexOutOfBoundsException("No remaining bytes");
+            }
+
+            if (this.currentOffset < written(this.current)) {
+                return;
+            }
+
+            this.current = this.current.next();
+            this.currentOffset = 0;
+
+            if (this.current == null) {
+                throw new IndexOutOfBoundsException("No remaining bytes");
+            }
+        }
+
+        private short peekShort() {
+            final MemorySegment segment = this.current.payload();
+
+            if (this.currentOffset + 2 <= written(this.current)) {
+                return segment.get(ValueLayout.JAVA_SHORT_UNALIGNED, this.currentOffset);
+            }
+
+            final int high = getAt(this.position) & 0xff;
+            final int low = getAt(this.position + 1) & 0xff;
+
+            return (short) ((high << 8) | low);
+        }
+
+        private byte getAt(long position) {
+            Block block = this.head;
+            long logical = 0;
+
+            while (block != null) {
+                final MemorySegment segment = block.payload();
+                final long size = written(block);
+                if (position < logical + size) {
+                    return segment.get(ValueLayout.JAVA_BYTE, position - logical);
+                }
+                logical += size;
+                block = block.next();
+            }
+
+            throw new IndexOutOfBoundsException("Position outside of buffer: " + position);
+        }
+
+        private void advance(int count) {
+            int remaining = count;
+
+            while (remaining > 0) {
+                ensureAvailable();
+                final MemorySegment segment = this.current.payload();
+                final int available = written(this.current) - this.currentOffset;
+                final int step = Math.min(available, remaining);
+
+                this.currentOffset += step;
+                this.position += step;
+                remaining -= step;
+
+                if (this.currentOffset == written(this.current)) {
+                    this.current = this.current.next();
+                    this.currentOffset = 0;
+                }
+            }
         }
 
         private void locate(long target) {
-            if (target == this.position && this.current != null) {
+            if (target < 0 || target > limit()) {
+                throw new IndexOutOfBoundsException("Position outside of buffer: " + target);
+            }
+            if (target == this.position) {
                 return;
             }
 
             Block block = this.head;
             long logical = 0;
+
             while (block != null) {
-                final int size = block.byteBuffer().position();
+                final long size = block.payload().byteSize();
+
                 if (target < logical + size) {
                     this.current = block;
                     this.currentOffset = (int) (target - logical);
                     this.position = target;
                     return;
                 }
+
                 logical += size;
                 block = block.next();
             }
 
-            if (target == logical) {
-                this.current = null;
-                this.currentOffset = 0;
-                this.position = target;
-                return;
-            }
-
-            throw new IndexOutOfBoundsException("Position outside of buffer: " + target);
-        }
-
-        private int logicalOffset(Block target, int offset) {
-            int result = offset;
-            Block block = this.head;
-            while (block != target) {
-                // target is always in the chain
-                // so block cannot be null until target
-                result += block.byteBuffer().position();
-                block = block.next();
-            }
-            return result;
+            // target == limit()
+            this.current = null;
+            this.currentOffset = 0;
+            this.position = target;
         }
     }
+
 }
