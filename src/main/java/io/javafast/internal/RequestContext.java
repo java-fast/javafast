@@ -4,7 +4,7 @@ import io.javafast.config.AppData;
 import io.javafast.http.*;
 import io.javafast.json.JsonMapper;
 import io.javafast.plugin.ContextPlugin;
-import io.javafast.transport.Http1RequestDecoder;
+import io.javafast.transport.HttpRequestDecoder;
 import io.javafast.transport.TransportBuffer;
 import io.javafast.validation.BodyValidator;
 import io.javafast.validation.Validator;
@@ -26,7 +26,7 @@ import java.util.stream.Stream;
 final class RequestContext implements Context {
 
     // TODO can be singleton!
-    private final Http1RequestDecoder decoder = new Http1RequestDecoder();
+    private final HttpRequestDecoder decoder = new HttpRequestDecoder();
 
     private TransportBuffer.Reader reader;
     private AppData appData;

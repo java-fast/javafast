@@ -3,18 +3,18 @@ package io.javafast.internal
 import io.javafast.config.AppDataManager
 import io.javafast.http.HttpStatus
 import io.javafast.test.TestUtils
-import io.javafast.transport.Http1RequestEncoder
+import io.javafast.transport.HttpRequestEncoder
 import io.javafast.transport.TransportBuffer
 import spock.lang.Specification
 
 class DefaultHttpRequestDispatcherSpec extends Specification implements TestUtils {
 
     TransportBuffer buffer
-    Http1RequestEncoder encoder
+    HttpRequestEncoder encoder
 
     def setup() {
         this.buffer = TransportBuffer.create(64, 1)
-        this.encoder = new Http1RequestEncoder()
+        this.encoder = new HttpRequestEncoder()
     }
 
     def "should create ContextInternal per request and write successful response"() {

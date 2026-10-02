@@ -7,7 +7,10 @@ import java.io.InputStream;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 
-public class Http1RequestEncoder implements TransportTestSource {
+/**
+ * HTTP 1.1 Request Encoder for test to consume for Jdk's HttpExchange
+ */
+public class HttpRequestEncoder implements TransportTestSource {
 
     private HttpExchange source;
     private InputStream body;

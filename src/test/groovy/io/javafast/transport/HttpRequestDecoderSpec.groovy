@@ -5,7 +5,7 @@ import io.javafast.test.TestUtils
 import spock.lang.Ignore
 import spock.lang.Specification
 
-class Http1RequestDecoderSpec extends Specification implements TestUtils {
+class HttpRequestDecoderSpec extends Specification implements TestUtils {
 
     private static Object fieldValue(Object target, String fieldName) {
         def field = target.class.getDeclaredField(fieldName)
@@ -16,8 +16,8 @@ class Http1RequestDecoderSpec extends Specification implements TestUtils {
     def "should decode method target and headers from http1.1 wire format"() {
         given:
         def buffer = TransportBuffer.create(256, 2)
-        def encoder = new Http1RequestEncoder()
-        def decoder = new Http1RequestDecoder()
+        def encoder = new HttpRequestEncoder()
+        def decoder = new HttpRequestDecoder()
         def exchange = exchange('POST', '/users/42?active=true')
         exchange.requestHeaders.add('Content-Length', '0')
         exchange.requestHeaders.add('X-Test', 'abc')
@@ -45,8 +45,8 @@ class Http1RequestDecoderSpec extends Specification implements TestUtils {
     def "should detect chunked transfer encoding"() {
         given:
         def buffer = TransportBuffer.create(256, 2)
-        def encoder = new Http1RequestEncoder()
-        def decoder = new Http1RequestDecoder()
+        def encoder = new HttpRequestEncoder()
+        def decoder = new HttpRequestDecoder()
         def exchange = exchange('GET', '/stream')
         exchange.requestHeaders.add('Transfer-Encoding', 'gzip, chunked')
         def block = encoder.encode(exchange, buffer)

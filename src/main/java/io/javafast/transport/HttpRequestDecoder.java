@@ -4,7 +4,10 @@ import io.javafast.http.HttpMethod;
 
 import java.nio.ByteOrder;
 
-public class Http1RequestDecoder {
+/**
+ * HTTP 1.1 Request Decoder
+ */
+public class HttpRequestDecoder {
 
     private static final boolean LITTLE_ENDIAN = ByteOrder.nativeOrder() == ByteOrder.LITTLE_ENDIAN;
 
