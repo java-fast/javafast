@@ -28,6 +28,7 @@ public class HttpRequestDecoder {
     private static final byte CR = '\r';
     private static final byte LF = '\n';
     private static final byte SPACE = ' ';
+    private static final byte HTAB = '\t';
     private static final byte SEMICOLON = ':';
 
     private static final String CONTENT_LENGTH = "content-length";
@@ -95,12 +96,6 @@ public class HttpRequestDecoder {
     private int bodyStart;
     private int bodyLength;
 
-    /**
-     * TODO
-     * if (contentLength > MAX_BODY_SIZE) {
-     *     throw ...
-     * }
-     */
     private long contentLength;
     private boolean chunked;
 
@@ -196,11 +191,12 @@ public class HttpRequestDecoder {
                 this.reader.skip(nameLength + 1); // +1 for ':'
                 skipOWS();
                 valueStart = this.reader.position();
-                valueLength = this.reader.indexOf(CR, LF);
+                valueLength = this.reader.indexOf(CR, LF); // contains trailing OWS
                 if (valueLength < 0) {
                     throw HttpRequestException.malformed();
                 }
-                this.reader.skip(valueLength);
+                valueLength -= trimOWS(valueLength); // trim trailing OWS
+                this.reader.skip(valueLength); // value can have multi values like: 123, abc, def
             }
             // Every header must end with CRLF
             if (!this.reader.consume(CR, LF)) {
@@ -212,9 +208,29 @@ public class HttpRequestDecoder {
     }
 
     private void skipOWS() {
-        while (this.reader.consume(SPACE)) {
+        while (this.reader.consume(SPACE) || this.reader.consume(HTAB)) {
             // OWS
         }
+    }
+
+    /**
+     * Calculates trim amount from last, doesn't modify reader position
+     *
+     * @param offset offset after reader's position
+     * @return trim amount
+     */
+    private int trimOWS(int offset) {
+        int rewind = 0;
+        final int pos = this.reader.position();
+        int cursor = pos + offset;
+        while (cursor > 0) {
+            final int c = this.reader.getAt(--cursor);
+            if (c != SPACE && c != HTAB) {
+                break;
+            }
+            rewind++;
+        }
+        return rewind;
     }
 
     private void addHeader(int offset, int nameStart, int nameLength, int valueStart, int valueLength) {
@@ -225,20 +241,27 @@ public class HttpRequestDecoder {
     }
 
     private int parseContentLength() {
-        final int valueLength = this.reader.indexOf(CR, LF);
-        if (valueLength < 0) {
-            throw HttpRequestException.malformed();
-        }
+        int digits = 0;
         long value = 0;
+        final int valueLength = this.reader.indexOf(CR, LF);
         for (int i = 0; i < valueLength; i++) {
             final int c = this.reader.getUnsignedByte();
-            if (c < '0' || c > '9') {
-                throw HttpRequestException.malformed();
+            if (c >= '0' && c <= '9') {
+                value = value * 10 + (c - '0');
+                digits++;
+                continue;
             }
-            value = value * 10 + (c - '0');
+            if (c == HTAB || c == SPACE) { // handles trailing OWS
+                break;
+            }
+            throw HttpRequestException.malformed(); // unsupported char
         }
+        if (digits == 0) { // valueLength = -1 also ends up here
+            throw HttpRequestException.malformed(); // no digit or CRLF
+        }
+        this.reader.skip(valueLength - digits); // keep position aligned
         this.contentLength = value;
-        return valueLength; // parsed length
+        return digits; // parsed length
     }
 
     private int parseTransferEncoding() {
@@ -246,13 +269,18 @@ public class HttpRequestDecoder {
         if (valueLength < 0) {
             throw HttpRequestException.malformed();
         }
-        this.reader.skip(valueLength - TRANSFER_CODE_CHUNKED.length());
+        final int rewind = trimOWS(valueLength); // handle trailing OWS
+        final int lengthTrimmed = valueLength - rewind;
+        if (lengthTrimmed < TRANSFER_CODE_CHUNKED.length()) {
+            throw HttpRequestException.malformed();
+        }
+        this.reader.skip(lengthTrimmed - TRANSFER_CODE_CHUNKED.length());
         if (!this.reader.matchesAsciiIgnoreCase(TRANSFER_CODE_CHUNKED)) {
             throw HttpRequestException.unsupportedTransferEncoding();
         }
-        this.reader.skip(TRANSFER_CODE_CHUNKED.length());
+        this.reader.skip(TRANSFER_CODE_CHUNKED.length() + rewind); // keep position aligned
         this.chunked = true;
-        return valueLength; // parsed length
+        return lengthTrimmed; // parsed length
     }
 
     private void parseBody() {
@@ -272,9 +300,6 @@ public class HttpRequestDecoder {
         }
         this.bodyStart = this.reader.position();
         this.bodyLength = (int) this.contentLength;
-        if (this.reader.remaining() < this.bodyLength) {
-            throw HttpRequestException.malformed();
-        }
         this.reader.skip(this.bodyLength);
     }
 

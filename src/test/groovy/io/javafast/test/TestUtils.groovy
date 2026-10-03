@@ -47,16 +47,16 @@ trait TestUtils implements Logger {
         int statusCode = -1
         boolean closed = false
         Headers requestHeaders = new Headers()
-        InputStream request
+        InputStream requestBody
         ByteArrayOutputStream response = new ByteArrayOutputStream()
 
-        TestExchange(String method, String uri, String request = null) {
+        TestExchange(String method, String uri, String requestBody) {
             this.method = method
             this.uri = uri
-            if (request == null) {
-                this.request = InputStream.nullInputStream()
+            if (requestBody == null) {
+                this.requestBody = InputStream.nullInputStream()
             } else {
-                this.request = new ByteArrayInputStream(request.getBytes(StandardCharsets.UTF_8))
+                this.requestBody = new ByteArrayInputStream(requestBody.getBytes(StandardCharsets.UTF_8))
             }
         }
 
@@ -92,7 +92,7 @@ trait TestUtils implements Logger {
 
         @Override
         InputStream getRequestBody() {
-            return this.request
+            return this.requestBody
         }
 
         @Override
@@ -151,8 +151,8 @@ trait TestUtils implements Logger {
 
     }
 
-    TestExchange exchange(String method, String uri, String request = null) {
-        return new TestExchange(method, uri, request)
+    TestExchange exchange(String method, String uri, String body = null) {
+        return new TestExchange(method, uri, body)
     }
 
     Context contextOf(HttpMethod method, String uri) {

@@ -16,22 +16,22 @@ public class TransportBufferBenchmark {
     private FixedSource source;
 
     @Param({
-//        "256",
-//        "512",
+        "256",
+        "512",
         "1024",
-//        "2048",
-//        "4096",
-//        "8192",
-//        "16384"
+        "2048",
+        "4096",
+        "8192",
+        "16384"
     })
     int blockSize;
 
     @Param({
-//        "256",
-//        "1024",
+        "256",
+        "1024",
         "4096",
-//        "16384",
-//        "65536"
+        "16384",
+        "65536"
     })
     int requestSize;
 

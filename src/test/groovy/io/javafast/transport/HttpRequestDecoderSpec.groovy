@@ -72,11 +72,41 @@ class HttpRequestDecoderSpec extends Specification implements TestUtils {
         def encoder = new HttpRequestEncoder()
         def decoder = new HttpRequestDecoder()
 
-        when: 'supported transfer encoding'
+        when: 'supported multiple codes'
         def ex = exchange('GET', '/stream')
         ex.requestHeaders.add('Transfer-Encoding', 'gzip, chunked')
-        def block = encoder.encode(ex, buffer)
-        def reader = block.reader()
+        def writer = encoder.encode(ex, buffer)
+        def reader = writer.reader()
+
+        and:
+        decoder.parse(reader)
+
+        then:
+        decoder.method == HttpMethod.GET
+        decoder.target == '/stream'
+        decoder.chunked
+
+        when: 'supported single code'
+        writer.release()
+        ex = exchange('GET', '/stream')
+        ex.requestHeaders.add('Transfer-Encoding', 'chunked')
+        writer = encoder.encode(ex, buffer)
+        reader = writer.reader()
+
+        and:
+        decoder.parse(reader)
+
+        then:
+        decoder.method == HttpMethod.GET
+        decoder.target == '/stream'
+        decoder.chunked
+
+        when: 'supported with OWS'
+        writer.release()
+        ex = exchange('GET', '/stream')
+        ex.requestHeaders.add('Transfer-Encoding', ' chunked    ')
+        writer = encoder.encode(ex, buffer)
+        reader = writer.reader()
 
         and:
         decoder.parse(reader)
@@ -87,10 +117,24 @@ class HttpRequestDecoderSpec extends Specification implements TestUtils {
         decoder.chunked
 
         when: 'unsupported transfer encoding'
+        writer.release()
         ex = exchange('GET', '/stream')
         ex.requestHeaders.add('Transfer-Encoding', 'chunked, gzip') // not valid in RFC 9112
-        block = encoder.encode(ex, buffer)
-        reader = block.reader()
+        writer = encoder.encode(ex, buffer)
+        reader = writer.reader()
+
+        and:
+        decoder.parse(reader)
+
+        then:
+        thrown(HttpRequestException)
+
+        when: 'unsupported transfer encoding'
+        writer.release()
+        ex = exchange('GET', '/stream')
+        ex.requestHeaders.add('Transfer-Encoding', 'gzip') // not valid in RFC 9112
+        writer = encoder.encode(ex, buffer)
+        reader = writer.reader()
 
         and:
         decoder.parse(reader)
@@ -99,7 +143,7 @@ class HttpRequestDecoderSpec extends Specification implements TestUtils {
         thrown(HttpRequestException)
 
         cleanup:
-        block.release()
+        writer.release()
         buffer.close()
     }
 }

@@ -108,7 +108,10 @@ final class RequestContext implements Context {
 
     @Override
     public String path() {
-        return this.decoder.getTarget();
+        if (this.path == null) {
+            this.path = this.decoder.getTarget();
+        }
+        return this.path;
     }
 
     @Override

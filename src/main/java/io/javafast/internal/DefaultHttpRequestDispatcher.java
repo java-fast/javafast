@@ -40,8 +40,9 @@ public final class DefaultHttpRequestDispatcher implements RequestDispatcher {
                 log.log(Level.SEVERE, throwable.getMessage(), throwable);
             }
             this.routing.handleError(context.statusCode(), context);
+        } finally {
+            context.writeResponseToExchange();
+            this.pool.release(context);
         }
-        context.writeResponseToExchange();
-        this.pool.release(context);
     }
 }

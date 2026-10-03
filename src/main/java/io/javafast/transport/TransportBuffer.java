@@ -298,7 +298,7 @@ public final class TransportBuffer implements AutoCloseable {
             this.totalWritten = 0;
         }
 
-        public long totalWritten() {
+        public int totalWritten() {
             return this.totalWritten;
         }
 
@@ -339,9 +339,6 @@ public final class TransportBuffer implements AutoCloseable {
         }
 
         public Reader position(int position) {
-            if (position < 0) {
-                throw new IllegalArgumentException("position < 0");
-            }
             locate(position);
             return this;
         }
@@ -885,7 +882,7 @@ public final class TransportBuffer implements AutoCloseable {
             return false;
         }
 
-        private byte getAt(long position) {
+        public byte getAt(int position) {
             Block block = this.head;
             long logical = 0;
 

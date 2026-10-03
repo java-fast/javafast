@@ -7,7 +7,7 @@ public class RequestContextPool {
     }
 
     final RequestContext[] ctxs;
-    int cursor = -1;
+    int cursor = 0;
 
     private RequestContextPool(int size) {
         this.ctxs = new RequestContext[size];
