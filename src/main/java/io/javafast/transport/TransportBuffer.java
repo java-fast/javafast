@@ -248,7 +248,12 @@ public final class TransportBuffer implements AutoCloseable {
 
         private Block head;
         private Block current;
-        private long totalWritten;
+
+        /**
+         * Logical position within the request.
+         * Request size is bounded by MAX_REQUEST_SIZE, therefore an int is enough.
+         */
+        private int totalWritten;
 
         private Writer() {
         }
@@ -313,7 +318,12 @@ public final class TransportBuffer implements AutoCloseable {
         private Block current;
 
         private int currentOffset;
-        private long position;
+
+        /**
+         * Logical position within the request.
+         * Request size is bounded by MAX_REQUEST_SIZE, therefore an int is enough.
+         */
+        private int position;
 
         private Reader(Block head) {
             this.head = head;
@@ -324,11 +334,11 @@ public final class TransportBuffer implements AutoCloseable {
             this.head.release();
         }
 
-        public long position() {
+        public int position() {
             return this.position;
         }
 
-        public Reader position(long position) {
+        public Reader position(int position) {
             if (position < 0) {
                 throw new IllegalArgumentException("position < 0");
             }
@@ -340,7 +350,7 @@ public final class TransportBuffer implements AutoCloseable {
             return block.byteBuffer.position();
         }
 
-        public long limit() {
+        public int limit() {
             return this.head.writer.totalWritten;
         }
 
@@ -369,13 +379,9 @@ public final class TransportBuffer implements AutoCloseable {
          */
         public byte get() {
             ensureAvailable();
-
-            final byte value =
-                this.current.payload().get(ValueLayout.JAVA_BYTE, this.currentOffset);
-
+            final byte value = this.current.payload().get(ValueLayout.JAVA_BYTE, this.currentOffset);
             this.currentOffset++;
             this.position++;
-
             return value;
         }
 
@@ -544,33 +550,71 @@ public final class TransportBuffer implements AutoCloseable {
         }
 
         /**
+         * TODO after benchmarking, try 8-byte SWAR scanning?
+         * Checks if the next characters match the expected string, ignoring the ASCII case.
+         *
+         * @param expected must be in lowercase
+         */
+        public boolean matchesAsciiIgnoreCase(String expected) {
+            final int length = expected.length();
+
+            if (remaining() < length) {
+                return false;
+            }
+
+            for (int i = 0; i < length; i++) {
+                byte actual = getAt(this.position + i);
+                if (actual >= 'A' && actual <= 'Z') {
+                    actual |= 0x20;
+                }
+                if (actual != expected.charAt(i)) {
+                    return false;
+                }
+            }
+
+            return true;
+        }
+
+        /**
          * Consumes one byte if it matches.
          */
         public boolean consume(byte expected) {
             if (!hasRemaining()) {
                 return false;
             }
-
             if (peek() != expected) {
                 return false;
             }
-
             advance(1);
             return true;
         }
 
         /**
+         * Consumes two bytes sequentially based on the wire's endianness.
+         */
+        public boolean consume(byte first, byte second) {
+            if (remaining() < 2) {
+                return false;
+            }
+            if (!peek(first, second)) {
+                return false;
+            }
+            advance(2);
+            return true;
+        }
+
+        /**
          * Consumes two bytes if they match.
+         *
+         * @param expected 2 byte native-endian numeric value
          */
         public boolean consume(short expected) {
             if (remaining() < 2) {
                 return false;
             }
-
             if (peekShort() != expected) {
                 return false;
             }
-
             advance(2);
             return true;
         }
@@ -593,23 +637,23 @@ public final class TransportBuffer implements AutoCloseable {
         /**
          * Finds value starting from the current cursor position.
          * Does not modify the cursor.
+         *
+         * @return cursor relative position (length)
          */
         public int indexOf(byte value) {
             Block block = this.current;
             int blockOffset = this.currentOffset;
-            long logicalPosition = this.position;
+            int relativePos = 0;
 
             while (block != null) {
                 final MemorySegment segment = block.payload();
                 final int end = written(block);
-
                 for (int i = blockOffset; i < end; i++) {
                     if (segment.get(ValueLayout.JAVA_BYTE, i) == value) {
-                        return (int) (logicalPosition + (i - blockOffset));
+                        return relativePos + (i - blockOffset);
                     }
                 }
-
-                logicalPosition += end - blockOffset;
+                relativePos += end - blockOffset;
                 block = block.next();
                 blockOffset = 0;
             }
@@ -620,27 +664,25 @@ public final class TransportBuffer implements AutoCloseable {
         /**
          * Finds a two-byte value starting from the current cursor position.
          * Handles block boundaries.
+         * Checks two bytes on the wire sequentially. Therefore, it depends on the wire's endianness.
+         *
+         * @return cursor relative position (length)
          */
-        public int indexOf(short value) {
+        public int indexOf(byte first, byte second) {
             Block block = this.current;
             int blockOffset = this.currentOffset;
-            long logicalPosition = this.position;
-
-            final byte first = (byte) (value >>> 8);
-            final byte second = (byte) value;
+            long relativePos = 0;
 
             while (block != null) {
                 final MemorySegment segment = block.payload();
                 final int end = written(block);
-
                 // Fast path: both bytes reside in this block.
                 for (int i = blockOffset; i < end - 1; i++) {
                     if (segment.get(ValueLayout.JAVA_BYTE, i) == first &&
                         segment.get(ValueLayout.JAVA_BYTE, i + 1) == second) {
-                        return (int) (logicalPosition + (i - blockOffset));
+                        return (int) (relativePos + (i - blockOffset));
                     }
                 }
-
                 // Slow path: first byte is the last byte of this block.
                 if (blockOffset < end &&
                     segment.get(ValueLayout.JAVA_BYTE, end - 1) == first) {
@@ -649,12 +691,11 @@ public final class TransportBuffer implements AutoCloseable {
                         final MemorySegment nextSegment = next.payload();
                         if (written(next) > 0 &&
                             nextSegment.get(ValueLayout.JAVA_BYTE, 0) == second) {
-                            return (int) (logicalPosition + (end - blockOffset - 1));
+                            return (int) (relativePos + (end - blockOffset - 1));
                         }
                     }
                 }
-
-                logicalPosition += end - blockOffset;
+                relativePos += end - blockOffset;
                 block = block.next();
                 blockOffset = 0;
             }
@@ -665,21 +706,19 @@ public final class TransportBuffer implements AutoCloseable {
         /**
          * Finds value starting at an absolute offset.
          * Does not modify the cursor.
+         *
+         * @return offset relative position (length)
          */
         public int indexOf(byte value, int offset) {
             if (offset < 0) {
                 throw new IllegalArgumentException("offset < 0");
             }
-
             if (offset >= limit()) {
                 return -1;
             }
-
-            final long oldPosition = this.position;
-
+            final int oldPosition = this.position;
             locate(offset);
             final int result = indexOf(value);
-
             locate(oldPosition);
 
             return result;
@@ -712,7 +751,7 @@ public final class TransportBuffer implements AutoCloseable {
          * Reads an ASCII string from the current position and advances.
          */
         public String getAscii(int length) {
-            final String value = getAscii((int) this.position, length);
+            final String value = getAscii(this.position, length);
             advance(length);
             return value;
         }
@@ -721,7 +760,7 @@ public final class TransportBuffer implements AutoCloseable {
          * Reads a UTF-8 string from the current position and advances.
          */
         public String getUtf8(int length) {
-            final String value = getUtf8((int) this.position, length);
+            final String value = getUtf8(this.position, length);
             advance(length);
             return value;
         }
@@ -777,9 +816,7 @@ public final class TransportBuffer implements AutoCloseable {
             if (length < 0 || offset < 0 || (long) offset + length > limit()) {
                 throw new IndexOutOfBoundsException();
             }
-
             locate(offset);
-
             if (this.current == null) {
                 return length == 0 ? MemorySegment.NULL : null;
             }
@@ -800,14 +837,12 @@ public final class TransportBuffer implements AutoCloseable {
             if (this.current == null) {
                 throw new IndexOutOfBoundsException("No remaining bytes");
             }
-
             if (this.currentOffset < written(this.current)) {
                 return;
             }
 
             this.current = this.current.next();
             this.currentOffset = 0;
-
             if (this.current == null) {
                 throw new IndexOutOfBoundsException("No remaining bytes");
             }
@@ -824,6 +859,30 @@ public final class TransportBuffer implements AutoCloseable {
             final int low = getAt(this.position + 1) & 0xff;
 
             return (short) ((high << 8) | low);
+        }
+
+        private boolean peek(byte first, byte second) {
+            final Block block = this.current;
+            final int offset = this.currentOffset;
+            if (block == null) return false;
+
+            final MemorySegment segment = block.payload();
+            final int end = written(block);
+            // Same block
+            if (offset + 1 < end) {
+                return segment.get(ValueLayout.JAVA_BYTE, offset) == first
+                    && segment.get(ValueLayout.JAVA_BYTE, offset + 1) == second;
+            }
+            // Cross-block
+            if (offset == end - 1) {
+                final Block next = block.next();
+                if (next == null || written(next) == 0) {
+                    return false;
+                }
+                return segment.get(ValueLayout.JAVA_BYTE, offset) == first
+                    && next.payload().get(ValueLayout.JAVA_BYTE, 0) == second;
+            }
+            return false;
         }
 
         private byte getAt(long position) {
@@ -848,7 +907,6 @@ public final class TransportBuffer implements AutoCloseable {
 
             while (remaining > 0) {
                 ensureAvailable();
-                final MemorySegment segment = this.current.payload();
                 final int available = written(this.current) - this.currentOffset;
                 final int step = Math.min(available, remaining);
 
@@ -863,7 +921,7 @@ public final class TransportBuffer implements AutoCloseable {
             }
         }
 
-        private void locate(long target) {
+        private void locate(int target) {
             if (target < 0 || target > limit()) {
                 throw new IndexOutOfBoundsException("Position outside of buffer: " + target);
             }
@@ -873,21 +931,17 @@ public final class TransportBuffer implements AutoCloseable {
 
             Block block = this.head;
             long logical = 0;
-
             while (block != null) {
                 final long size = block.payload().byteSize();
-
                 if (target < logical + size) {
                     this.current = block;
                     this.currentOffset = (int) (target - logical);
                     this.position = target;
                     return;
                 }
-
                 logical += size;
                 block = block.next();
             }
-
             // target == limit()
             this.current = null;
             this.currentOffset = 0;

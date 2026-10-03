@@ -15,6 +15,7 @@ import io.javafast.transport.Transport
 import java.net.http.HttpClient
 import java.net.http.HttpRequest
 import java.net.http.HttpResponse
+import java.nio.charset.StandardCharsets
 import java.util.function.Consumer
 import java.util.function.Supplier
 
@@ -46,12 +47,17 @@ trait TestUtils implements Logger {
         int statusCode = -1
         boolean closed = false
         Headers requestHeaders = new Headers()
-
+        InputStream request
         ByteArrayOutputStream response = new ByteArrayOutputStream()
 
-        TestExchange(String method, String uri) {
+        TestExchange(String method, String uri, String request = null) {
             this.method = method
             this.uri = uri
+            if (request == null) {
+                this.request = InputStream.nullInputStream()
+            } else {
+                this.request = new ByteArrayInputStream(request.getBytes(StandardCharsets.UTF_8))
+            }
         }
 
         @Override
@@ -86,7 +92,7 @@ trait TestUtils implements Logger {
 
         @Override
         InputStream getRequestBody() {
-            return InputStream.nullInputStream()
+            return this.request
         }
 
         @Override
@@ -145,8 +151,8 @@ trait TestUtils implements Logger {
 
     }
 
-    TestExchange exchange(String method, String uri) {
-        return new TestExchange(method, uri)
+    TestExchange exchange(String method, String uri, String request = null) {
+        return new TestExchange(method, uri, request)
     }
 
     Context contextOf(HttpMethod method, String uri) {

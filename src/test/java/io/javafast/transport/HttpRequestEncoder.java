@@ -9,6 +9,16 @@ import java.nio.charset.StandardCharsets;
 
 /**
  * HTTP 1.1 Request Encoder for test to consume for Jdk's HttpExchange
+ * Example HTTP/1.1 Request:
+ * <p>
+ * POST /users/42?foo=bar HTTP/1.1\r\n
+ * Host: example.com\r\n
+ * Content-Type: application/json\r\n
+ * Content-Length: 17\r\n
+ * X-Foo: bar\r\n
+ * \r\n
+ * {"name":"JavaFast"}
+ * </p>
  */
 public class HttpRequestEncoder implements TransportTestSource {
 
@@ -28,16 +38,13 @@ public class HttpRequestEncoder implements TransportTestSource {
             .append(" HTTP/1.1\r\n");
 
         for (var entry : this.source.getRequestHeaders().entrySet()) {
-            requestLineAndHeaders.append(entry.getKey()).append(": ");
-            boolean first = true;
             for (var value : entry.getValue()) {
-                if (!first) {
-                    requestLineAndHeaders.append(", ");
-                }
-                requestLineAndHeaders.append(value);
-                first = false;
+                requestLineAndHeaders
+                    .append(entry.getKey())
+                    .append(": ")
+                    .append(value)
+                    .append("\r\n");
             }
-            requestLineAndHeaders.append("\r\n");
         }
         requestLineAndHeaders.append("\r\n");
 
