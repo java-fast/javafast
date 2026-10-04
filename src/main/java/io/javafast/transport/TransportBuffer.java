@@ -351,7 +351,7 @@ public final class TransportBuffer implements AutoCloseable {
             return this.head.writer.totalWritten;
         }
 
-        public long remaining() {
+        public int remaining() {
             return limit() - this.position;
         }
 
@@ -506,10 +506,8 @@ public final class TransportBuffer implements AutoCloseable {
         /**
          * Checks whether the bytes at the current position match value.
          */
-        public boolean matchesAscii(String value) {
-            final int length = value.length();
-
-            if ((long) length > remaining()) {
+        public boolean matchesAscii(String value, int ooffset, int len) {
+            if (len > remaining()) {
                 return false;
             }
 
@@ -519,8 +517,8 @@ public final class TransportBuffer implements AutoCloseable {
 
             Block block = this.current;
             int blockOffset = this.currentOffset;
-            int valueOffset = 0;
-            int remaining = length;
+            int valueOffset = ooffset;
+            int remaining = len;
 
             while (block != null && remaining > 0) {
                 final MemorySegment segment = block.payload();
@@ -528,7 +526,7 @@ public final class TransportBuffer implements AutoCloseable {
                 final int count = Math.min(available, remaining);
 
                 for (int i = 0; i < count; i++) {
-                    if ((segment.get(ValueLayout.JAVA_BYTE, blockOffset + i) & 0xff) != value.charAt(valueOffset + i)) {
+                    if (segment.get(ValueLayout.JAVA_BYTE, blockOffset + i) != value.charAt(valueOffset + i)) {
                         return false;
                     }
                 }
@@ -546,30 +544,38 @@ public final class TransportBuffer implements AutoCloseable {
             return true;
         }
 
+        public boolean matchesAscii(String value) {
+            final int length = value.length();
+            return matchesAscii(value, 0, length);
+        }
+
         /**
          * TODO after benchmarking, try 8-byte SWAR scanning?
          * Checks if the next characters match the expected string, ignoring the ASCII case.
          *
          * @param expected must be in lowercase
          */
-        public boolean matchesAsciiIgnoreCase(String expected) {
-            final int length = expected.length();
-
-            if (remaining() < length) {
+        public boolean matchesAsciiIgnoreCase(String expected, int ooffset, int len) {
+            if (remaining() < len) {
                 return false;
             }
 
-            for (int i = 0; i < length; i++) {
+            for (int i = 0; i < len; i++) {
                 byte actual = getAt(this.position + i);
                 if (actual >= 'A' && actual <= 'Z') {
                     actual |= 0x20;
                 }
-                if (actual != expected.charAt(i)) {
+                if (actual != expected.charAt(i + ooffset)) {
                     return false;
                 }
             }
 
             return true;
+        }
+
+        public boolean matchesAsciiIgnoreCase(String expected) {
+            final int length = expected.length();
+            return matchesAsciiIgnoreCase(expected, 0, length);
         }
 
         /**

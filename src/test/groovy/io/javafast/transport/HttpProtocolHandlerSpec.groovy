@@ -119,7 +119,7 @@ class HttpProtocolHandlerSpec extends Specification implements TestUtils {
 
     private Map encodedExchange(String method, String uri, String body = null, Map<String, String> headers = [:]) {
         def buffer = TransportBuffer.create(256, 2)
-        def encoder = new HttpRequestEncoder()
+        def encoder = new HttpTestRequestEncoder()
         def ex = exchange(method, uri, body)
         headers.each { name, value ->
             ex.requestHeaders.add(name, value)

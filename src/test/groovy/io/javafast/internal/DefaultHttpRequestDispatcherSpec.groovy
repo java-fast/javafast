@@ -3,18 +3,18 @@ package io.javafast.internal
 import io.javafast.config.AppDataManager
 import io.javafast.http.HttpStatus
 import io.javafast.test.TestUtils
-import io.javafast.transport.HttpRequestEncoder
+import io.javafast.transport.HttpTestRequestEncoder
 import io.javafast.transport.TransportBuffer
 import spock.lang.Specification
 
 class DefaultHttpRequestDispatcherSpec extends Specification implements TestUtils {
 
     TransportBuffer buffer
-    HttpRequestEncoder encoder
+    HttpTestRequestEncoder encoder
 
     def setup() {
         this.buffer = TransportBuffer.create(64, 1)
-        this.encoder = new HttpRequestEncoder()
+        this.encoder = new HttpTestRequestEncoder()
     }
 
     def "should create ContextInternal per request and write successful response"() {
@@ -35,6 +35,7 @@ class DefaultHttpRequestDispatcherSpec extends Specification implements TestUtil
         then:
         verifyAll(requestPool.get()) {
             statusCode == 200
+            path() == '/users/42'
             result() == '42'
         }
 
@@ -89,6 +90,7 @@ class DefaultHttpRequestDispatcherSpec extends Specification implements TestUtil
         then:
         verifyAll(requestPool.get()) {
             statusCode == HttpStatus.NOT_FOUND.code()
+            path() == '/missing'
             result() == 'Endpoint GET /missing not found'
         }
     }

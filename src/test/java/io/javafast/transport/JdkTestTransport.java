@@ -15,7 +15,7 @@ public class JdkTestTransport implements Transport {
 
     private final TransportBuffer buffer;
     private final RequestDispatcher handler;
-    private final HttpRequestEncoder encoder = new HttpRequestEncoder();
+    private final HttpTestRequestEncoder encoder = new HttpTestRequestEncoder();
 
     private HttpServer server;
     private TransportConfig config;

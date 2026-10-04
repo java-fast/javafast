@@ -32,7 +32,8 @@ final class RequestContext implements Context {
     private AppData appData;
 
     private HttpMethod method;
-    private String path;
+    final ByteString path = new ByteString();
+
     private String queryString;
 
     private String contextPath;
@@ -79,7 +80,7 @@ final class RequestContext implements Context {
         this.reader = reader;
         this.appData = appData;
         this.method = null;
-        this.path = null;
+
         this.queryString = null;
         this.contextPath = null;
         this.pathParamMap = null;
@@ -89,6 +90,7 @@ final class RequestContext implements Context {
         this.skipRemainingHandlers = false;
 
         this.decoder.parse(reader);
+        this.decoder.setTarget(this.path);
     }
 
     @Override
@@ -108,10 +110,7 @@ final class RequestContext implements Context {
 
     @Override
     public String path() {
-        if (this.path == null) {
-            this.path = this.decoder.getTarget();
-        }
-        return this.path;
+        return this.path.toString();
     }
 
     @Override

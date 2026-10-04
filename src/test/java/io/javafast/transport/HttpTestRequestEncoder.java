@@ -14,18 +14,20 @@ import java.nio.charset.StandardCharsets;
  * POST /users/42?foo=bar HTTP/1.1\r\n
  * Host: example.com\r\n
  * Content-Type: application/json\r\n
- * Content-Length: 17\r\n
+ * Content-Length: 19\r\n
  * X-Foo: bar\r\n
  * \r\n
  * {"name":"JavaFast"}
  * </p>
  */
-public class HttpRequestEncoder implements TransportTestSource {
+public class HttpTestRequestEncoder implements TransportTestSource {
 
     private HttpExchange source;
     private InputStream body;
     private byte[] headBytes;
     private int headOffset;
+
+    final byte[] chunk = new byte[8192]; // chunk buffer
 
     private void initialize() {
         if (this.headBytes != null) {
@@ -75,11 +77,10 @@ public class HttpRequestEncoder implements TransportTestSource {
             written += toWrite;
         }
 
-        final byte[] chunk = new byte[8192]; // chunk buffer
         while (destination.hasRemaining() && this.body != null) {
             final int read;
             try {
-                read = this.body.read(chunk, 0, Math.min(destination.remaining(), 8192));
+                read = this.body.read(this.chunk, 0, Math.min(destination.remaining(), 8192));
             } catch (IOException exception) {
                 throw new IllegalStateException("Failed to read request body", exception);
             }
@@ -87,7 +88,7 @@ public class HttpRequestEncoder implements TransportTestSource {
                 reset();
                 return written == 0 ? -1 : written;
             }
-            destination.put(chunk, 0, read);
+            destination.put(this.chunk, 0, read);
             written += read;
         }
 

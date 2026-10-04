@@ -1,6 +1,7 @@
 package io.javafast.transport;
 
 import io.javafast.http.HttpMethod;
+import io.javafast.internal.ByteString;
 
 import java.nio.ByteOrder;
 
@@ -316,6 +317,10 @@ public class HttpRequestDecoder {
 
     public String getTarget() {
         return this.reader.getAscii(this.targetStart, this.targetLength);
+    }
+
+    public void setTarget(ByteString target) {
+        target.reset(this.reader, this.targetStart, this.targetLength);
     }
 
     public String getHeaderName(int index) {

@@ -9,7 +9,7 @@ class HttpRequestDecoderSpec extends Specification implements TestUtils {
     def "should decode method target and headers from http1.1 wire format"() {
         given:
         def buffer = TransportBuffer.create(256, 2)
-        def encoder = new HttpRequestEncoder()
+        def encoder = new HttpTestRequestEncoder()
         def decoder = new HttpRequestDecoder()
         def ex = exchange('POST', '/users/42?active=true')
         ex.requestHeaders.add('Content-Length', '0')
@@ -40,7 +40,7 @@ class HttpRequestDecoderSpec extends Specification implements TestUtils {
     def "should decode body"() {
         given:
         def buffer = TransportBuffer.create(256, 2)
-        def encoder = new HttpRequestEncoder()
+        def encoder = new HttpTestRequestEncoder()
         def decoder = new HttpRequestDecoder()
         def ex = exchange('POST', '/users/42?active=true', 'b' + 'o'.repeat(127))
         ex.requestHeaders.add('Content-Length', '128')
@@ -69,7 +69,7 @@ class HttpRequestDecoderSpec extends Specification implements TestUtils {
     def "should detect chunked transfer encoding"() {
         given:
         def buffer = TransportBuffer.create(256, 2)
-        def encoder = new HttpRequestEncoder()
+        def encoder = new HttpTestRequestEncoder()
         def decoder = new HttpRequestDecoder()
 
         when: 'supported multiple codes'
