@@ -82,7 +82,7 @@ final class RouteRegistry {
         entries.add(new Route(method, null, path, handler, RoutePattern.compile(path, this.ignoreTrailingSlashes, this.multipleSlashes, this.caseInsensitive)));
     }
 
-    RouteMatch findFirst(RouterState state, HttpMethod method, String requestPath) {
+    RouteMatch findFirst(RouterState state, HttpMethod method, ByteString requestPath) {
         final List<Route> entries = this.routes[method.key()];
         if (entries == null) return null;
         for (Route route : entries) {
@@ -95,7 +95,7 @@ final class RouteRegistry {
         return null;
     }
 
-    void findAll(RouterState state, HandlerPhase phase, String requestPath, ThrowingConsumer<RouteMatch> consumer) throws Exception {
+    void findAll(RouterState state, HandlerPhase phase, ByteString requestPath, ThrowingConsumer<RouteMatch> consumer) throws Exception {
         final List<Route> entries = this.routes[phase.key()];
         if (entries == null) return;
         for (Route route : entries) {

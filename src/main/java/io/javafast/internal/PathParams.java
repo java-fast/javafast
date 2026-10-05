@@ -11,7 +11,7 @@ import java.util.Map;
 final class PathParams extends HashMap<String, String> {
 
     private final PathParam[] params;
-    private String requestPath;
+    private ByteString requestPath;
     private int size;
 
     public PathParams(int maxSize) {
@@ -21,7 +21,7 @@ final class PathParams extends HashMap<String, String> {
         }
     }
 
-    void reset(String requestPath) {
+    void reset(ByteString requestPath) {
         this.requestPath = requestPath;
         this.size = 0;
         clear();

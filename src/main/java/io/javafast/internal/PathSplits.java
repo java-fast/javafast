@@ -4,7 +4,7 @@ class PathSplits {
 
     private final PathSplit[] splits;
     private final JoinSplit joinSplit = new JoinSplit();
-    private String requestPath;
+    private ByteString requestPath;
 
     PathSplits(int maxSize) {
         this.splits = new PathSplit[maxSize];
@@ -13,7 +13,7 @@ class PathSplits {
         }
     }
 
-    void reset(String requestPath) {
+    void reset(ByteString requestPath) {
         this.requestPath = requestPath;
     }
 
@@ -46,11 +46,11 @@ class PathSplits {
 
         boolean match(String test, boolean caseInsensitive) {
             return test.length() == this.length
-                && test.regionMatches(
+                && requestPath.regionMatches(
                 caseInsensitive,
-                0,
-                requestPath,
                 this.start,
+                test,
+                0,
                 this.length
             );
         }
@@ -70,19 +70,15 @@ class PathSplits {
          * @return index relative to this PathSplit
          */
         int lastIndexOf(String test, int offset, boolean caseInsensitive) {
-            return findLastOccurrence(requestPath, test, this.start + offset, this.start + this.length, caseInsensitive) - this.start;
-        }
-
-        private static int findLastOccurrence(String input, String needle, int from, int to, boolean ci) {
-            final int needleLength = needle.length();
-            final int max = Math.min(to, input.length() - needleLength + 1);
+            final int needleLength = test.length();
+            final int max = Math.min(this.start + this.length, requestPath.length() - needleLength + 1);
             int last = -1;
-            for (int i = from; i < max; i++) {
-                if (input.regionMatches(ci, i, needle, 0, needleLength)) {
+            for (int i = this.start + offset; i < max; i++) {
+                if (requestPath.regionMatches(caseInsensitive, i, test, 0, needleLength)) {
                     last = i;
                 }
             }
-            return last;
+            return last - this.start;
         }
 
     }

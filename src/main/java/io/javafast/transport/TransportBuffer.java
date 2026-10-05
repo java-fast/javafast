@@ -1,7 +1,6 @@
 package io.javafast.transport;
 
 import java.io.IOException;
-import java.io.Reader;
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
@@ -545,8 +544,7 @@ public final class TransportBuffer implements AutoCloseable {
         }
 
         public boolean matchesAscii(String value) {
-            final int length = value.length();
-            return matchesAscii(value, 0, length);
+            return matchesAscii(value, 0, value.length());
         }
 
         /**

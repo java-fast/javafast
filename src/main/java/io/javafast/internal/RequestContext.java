@@ -80,7 +80,6 @@ final class RequestContext implements Context {
         this.reader = reader;
         this.appData = appData;
         this.method = null;
-
         this.queryString = null;
         this.contextPath = null;
         this.pathParamMap = null;
@@ -105,7 +104,10 @@ final class RequestContext implements Context {
 
     @Override
     public HttpMethod method() {
-        return this.decoder.getMethod();
+        if (this.method == null) {
+            this.method = this.decoder.getMethod();
+        }
+        return this.method;
     }
 
     @Override
@@ -544,7 +546,7 @@ final class RequestContext implements Context {
         this.headerMap = Map.copyOf(headerMap);
     }
 
-    void writeResponseToExchange() throws Exception {
+    void writeResponse() throws Exception {
         if (this.reader == null) {
             return;
         }
@@ -555,10 +557,10 @@ final class RequestContext implements Context {
         if(this.method == HttpMethod.HEAD) {
             return; // no body for HEAD
         }
-        final var stream = resultInputStream();
-        try (stream; final var out = responseBody(this.reader)) {
-            stream.transferTo(out);
-        }
+//        final var stream = resultInputStream();
+//        try (stream; final var out = responseBody(this.reader)) {
+//            stream.transferTo(out);
+//        }
     }
 
 }

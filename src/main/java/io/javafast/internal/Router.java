@@ -26,18 +26,18 @@ final class Router {
     }
 
     void handle(Context ctx) throws Exception {
-
-        this.registry.findAll(this.routerState, HandlerPhase.BEFORE, ctx.path(), m -> {
+        final ByteString path = ((RequestContext) ctx).path;
+        this.registry.findAll(this.routerState, HandlerPhase.BEFORE, path, m -> {
             m.route().handler().handle(ctx);
             throwIfHandlersSkipped(ctx);
         });
 
-        final RouteMatch match = find(ctx.method(), ctx.path());
+        final RouteMatch match = find(ctx.method(), path);
         if (match == null) {
-            throw HttpResponseException.notFound(ctx.method(), ctx.path());
+            throw HttpResponseException.notFound(ctx.method(), path.toString());
         }
 
-        this.registry.findAll(this.routerState, HandlerPhase.BEFORE_MATCHED, ctx.path(), m -> {
+        this.registry.findAll(this.routerState, HandlerPhase.BEFORE_MATCHED, path, m -> {
             // if beforeMatched has no path params, we inherit route's path params instead
             final var effective = m.patternMatch.params.isEmpty() ? match.patternMatch.params : m.patternMatch.params;
             ((RequestContext) ctx).setPathParamMap(effective);
@@ -49,7 +49,7 @@ final class Router {
         match.route().handler().handle(ctx);
         if (skipRemainingHandlers(ctx)) return;
 
-        this.registry.findAll(this.routerState, HandlerPhase.AFTER_MATCHED, ctx.path(), m -> {
+        this.registry.findAll(this.routerState, HandlerPhase.AFTER_MATCHED, path, m -> {
             // if afterMatched has no path params, we inherit route's path params instead
             final var effective = m.patternMatch.params.isEmpty() ? match.patternMatch.params : m.patternMatch.params;
             ((RequestContext) ctx).setPathParamMap(effective);
@@ -61,7 +61,8 @@ final class Router {
     }
 
     void handleAfter(Context ctx) throws Exception {
-        this.registry.findAll(this.routerState, HandlerPhase.AFTER, ctx.path(), m -> {
+        final ByteString path = ((RequestContext) ctx).path;
+        this.registry.findAll(this.routerState, HandlerPhase.AFTER, path, m -> {
             m.route().handler().handle(ctx);
             throwIfHandlersSkipped(ctx);
         });
@@ -101,7 +102,7 @@ final class Router {
         this.registry.add(phase, path, handler);
     }
 
-    RouteMatch find(HttpMethod method, String requestPath) {
+    RouteMatch find(HttpMethod method, ByteString requestPath) {
         return this.registry.findFirst(this.routerState, method, requestPath);
     }
 

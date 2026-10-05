@@ -14,7 +14,7 @@ class RouterSpec extends Specification implements TestUtils {
         router.add(HttpMethod.GET, "/users/{id}", users, null)
 
         when:
-        def match = router.find(HttpMethod.GET, "/users/1")
+        def match = router.find(HttpMethod.GET, byteString("/users/1"))
 
         then:
         match != null
@@ -22,10 +22,10 @@ class RouterSpec extends Specification implements TestUtils {
         match.patternMatch.params.get("id") == "1"
 
         and:
-        router.find(HttpMethod.POST, "/users/1") == null
+        router.find(HttpMethod.POST, byteString("/users/1")) == null
 
         when:
-        match = router.find(HttpMethod.GET, "/users/2")
+        match = router.find(HttpMethod.GET, byteString("/users/2"))
 
         then:
         match != null
@@ -33,7 +33,7 @@ class RouterSpec extends Specification implements TestUtils {
         match.patternMatch.params.get("id") == "2"
 
         and:
-        router.find(HttpMethod.POST, "/users/2") == null
+        router.find(HttpMethod.POST, byteString("/users/2")) == null
     }
 
     def "should reject duplicate route definition"() {
@@ -100,7 +100,7 @@ class RouterSpec extends Specification implements TestUtils {
         router.add(HttpMethod.GET, '/hello') {it.result('hello') }
 
         expect:
-        router.find(HttpMethod.HEAD, '/hello') != null
+        router.find(HttpMethod.HEAD, byteString('/hello')) != null
     }
 
     def 'duplicate explicit HEAD mapping should override'() {
@@ -111,7 +111,7 @@ class RouterSpec extends Specification implements TestUtils {
         when:
         router.add(HttpMethod.HEAD, '/hello') { it.result('head') }
         router.add(HttpMethod.HEAD, '/hello') { it.result('another') }
-        router.find(HttpMethod.HEAD, '/hello').route().handler().handle(headContext)
+        router.find(HttpMethod.HEAD, byteString('/hello')).route().handler().handle(headContext)
 
         then:
         noExceptionThrown()

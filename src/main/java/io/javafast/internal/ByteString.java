@@ -58,13 +58,18 @@ public final class ByteString {
         return this.reader.getAscii(this.position + beginIndex, endIndex - beginIndex);
     }
 
-    public boolean endsWith(String suffix) {
-        final int suffixLength = suffix.length();
-        if (suffixLength > this.length) {
+    public boolean endsWith(char c) {
+        if (1 > this.length) {
             return false;
         }
-        final int offset = this.length - suffixLength;
-        return regionMatches(false, offset, suffix, 0, suffixLength);
+        return this.reader.getAt(this.position + this.length - 1) == c;
+    }
+
+    public boolean contentEquals(char other) {
+        if (1 != this.length) {
+            return false;
+        }
+        return this.reader.getAt(this.position) == other;
     }
 
     public boolean contentEquals(String other) {

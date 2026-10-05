@@ -11,7 +11,7 @@ class PatternMatch {
     final PathSplits splits = new PathSplits(MAX_PATH_SPLITS);
     final PathParams params = new PathParams(MAX_PATH_PARAMS);
 
-    void reset(String requestPath) {
+    void reset(ByteString requestPath) {
         this.splits.reset(requestPath);
         this.params.reset(requestPath);
     }

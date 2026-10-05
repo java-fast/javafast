@@ -8,7 +8,8 @@ import java.util.*;
  */
 final class RoutePattern {
 
-    private final String rawPath;
+    private final boolean isRawPathSlash;
+    private final boolean isRawPathEndsWithSlash;
     private final List<Segment> segments;
     private final boolean wildcard;
     private final boolean trailingWildcard;
@@ -23,7 +24,8 @@ final class RoutePattern {
                          boolean ignoreTrailingSlash,
                          boolean multipleSlashes,
                          boolean caseInsensitive) {
-        this.rawPath = rawPath;
+        this.isRawPathSlash = rawPath.equals("/");
+        this.isRawPathEndsWithSlash = rawPath.charAt(rawPath.length() - 1) == '/';
         this.segments = segments;
         this.wildcard = wildcard;
         this.trailingWildcard = trailingWildcard;
@@ -48,7 +50,7 @@ final class RoutePattern {
         return new RoutePattern(rawPath, segments, wildcard, trailingWildcard, ignoreTrailingSlash, multipleSlashes, caseInsensitive);
     }
 
-    PathParams match(PatternMatch state, String requestPath) {
+    PathParams match(PatternMatch state, ByteString requestPath) {
         state.reset(requestPath);
         if (this.wildcard) return state.params;
         final int count = split(state.splits, requestPath);
@@ -89,23 +91,23 @@ final class RoutePattern {
 
         // The route compiler removes empty segments, so /foo and /foo/ are equivalent
         // only when the configuration says trailing slashes may be ignored.
-        if (!this.ignoreTrailingSlash && !this.multipleSlashes && !sameTrailingSlash(this.rawPath, requestPath)) {
+        if (!this.ignoreTrailingSlash && !this.multipleSlashes && !sameTrailingSlash(this.isRawPathSlash, this.isRawPathEndsWithSlash, requestPath)) {
             return null;
         }
 
         return state.params;
     }
 
-    private boolean sameTrailingSlash(String route, String request) {
-        if ("/".equals(route)) return "/".equals(request);
-        return route.endsWith("/") == request.endsWith("/");
+    private boolean sameTrailingSlash(boolean isSlash, boolean isLastCharSlash, ByteString request) {
+        if (isSlash) return request.contentEquals('/');
+        return isLastCharSlash == request.endsWith('/');
     }
 
-    private int split(PathSplits state, String path) {
+    private int split(PathSplits state, ByteString path) {
         int count = 0;
         int start = 0;
         for (int i = 0; i <= path.length(); i++) {
-            if (i == path.length() || path.charAt(i) == '/') {
+            if (i == path.length() || path.byteAt(i) == '/') {
                 if (i > start) state.set(count++, start, i - start);
                 else if (!this.multipleSlashes && i < path.length() && i == start && start > 0) {
                     state.set(count++, start, 0); // empty path segments are meaningful when multiple slashes are not collapsed

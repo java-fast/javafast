@@ -41,7 +41,7 @@ public final class DefaultHttpRequestDispatcher implements RequestDispatcher {
             }
             this.routing.handleError(context.statusCode(), context);
         } finally {
-            context.writeResponseToExchange();
+            context.writeResponse();
             this.pool.release(context);
         }
     }

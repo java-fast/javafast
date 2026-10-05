@@ -26,7 +26,7 @@ public class RequestDispatcherBenchmark {
             this.buffer = TransportBuffer.create(128, 1);
 
             final DefaultRouting routing = new DefaultRouting();
-            routing.get("/users/{id}", ctx -> ctx.result(ctx.pathParam("id")));
+            routing.get("/users/{id}", ctx -> {});
 
             this.pool = RequestContextPool.create(1);
             this.dispatcher = new DefaultHttpRequestDispatcher(this.pool, routing, new AppDataManager());
@@ -52,7 +52,7 @@ public class RequestDispatcherBenchmark {
             this.buffer = TransportBuffer.create(256, 1);
 
             final DefaultRouting routing = new DefaultRouting();
-            routing.post("/users", ctx -> ctx.result(ctx.body()));
+            routing.post("/users", ctx -> {});
 
             this.pool = RequestContextPool.create(1);
             this.dispatcher = new DefaultHttpRequestDispatcher(this.pool, routing, new AppDataManager());

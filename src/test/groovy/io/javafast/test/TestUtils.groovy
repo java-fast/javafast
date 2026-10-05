@@ -8,13 +8,17 @@ import io.javafast.JavaFast
 import io.javafast.config.JavaFastConfig
 import io.javafast.http.Context
 import io.javafast.http.HttpMethod
+import io.javafast.internal.ByteString
 import io.javafast.internal.RequestContext
 import io.javafast.transport.JdkTestTransport
 import io.javafast.transport.Transport
+import io.javafast.transport.TransportBuffer
 
 import java.net.http.HttpClient
 import java.net.http.HttpRequest
 import java.net.http.HttpResponse
+import java.nio.ByteBuffer
+import java.nio.channels.ReadableByteChannel
 import java.nio.charset.StandardCharsets
 import java.util.function.Consumer
 import java.util.function.Supplier
@@ -38,6 +42,56 @@ trait TestUtils implements Logger {
 
     def cleanup() {
         if(app != null) app.stop()
+    }
+
+    static class StringChannel implements ReadableByteChannel {
+
+        final String value
+
+        StringChannel(String value) {
+            this.value = value
+        }
+
+        @Override
+        int read(ByteBuffer dst) throws IOException {
+            dst.put(value.getBytes(StandardCharsets.UTF_8));
+            return dst.position();
+        }
+
+        @Override
+        boolean isOpen() {
+            return false
+        }
+
+        @Override
+        void close() throws IOException {
+
+        }
+    }
+
+    ByteString byteString(String value) {
+        final TransportBuffer buffer = TransportBuffer.create(Math.max(value.length(), 64), 1);
+        final TransportBuffer.Writer writer = buffer.writer();
+        try {
+            writer.read(new StringChannel(value))
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+
+        final ByteString bs = new ByteString();
+        bs.reset(writer.reader(), 0, writer.totalWritten());
+        return bs;
+    }
+
+    TransportBuffer.Reader reader(String value) {
+        final TransportBuffer buffer = TransportBuffer.create(Math.max(value.length(), 64), 1);
+        final TransportBuffer.Writer writer = buffer.writer();
+        try {
+            writer.read(new StringChannel(value))
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+        return writer.reader()
     }
 
     static class TestExchange extends HttpExchange {
@@ -156,9 +210,9 @@ trait TestUtils implements Logger {
     }
 
     Context contextOf(HttpMethod method, String uri) {
-        def ctx = new RequestContext();
+        def ctx = new RequestContext()
         ctx.method = method
-        ctx.path = uri
+        ctx.path.reset(reader(uri), 0, uri.length())
         return ctx
     }
 
