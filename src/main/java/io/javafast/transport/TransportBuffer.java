@@ -793,13 +793,7 @@ public final class TransportBuffer implements AutoCloseable {
                 final int available = written(block) - blockOffset;
                 final int count = Math.min(available, remaining);
 
-                MemorySegment.copy(
-                    segment,
-                    blockOffset,
-                    MemorySegment.ofArray(destination),
-                    destinationOffset + dest,
-                    count
-                );
+                MemorySegment.copy(segment, ValueLayout.JAVA_BYTE, blockOffset, destination, destinationOffset + dest, count);
 
                 remaining -= count;
                 dest += count;
