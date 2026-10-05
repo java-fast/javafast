@@ -1,9 +1,9 @@
 package io.javafast.internal
 
-
+import io.javafast.test.TestUtils
 import spock.lang.Specification
 
-class RouterPatternSpec extends Specification {
+class RouterPatternSpec extends Specification implements TestUtils {
 
     RouteMatch state
 
@@ -16,8 +16,8 @@ class RouterPatternSpec extends Specification {
         def pattern = RoutePattern.compile("/users", false, false, false)
 
         expect:
-        pattern.match(state.patternMatch, "/users") != null
-        pattern.match(state.patternMatch, "/users/1") == null
+        pattern.match(state.patternMatch, byteString("/users")) != null
+        pattern.match(state.patternMatch, byteString("/users/1")) == null
     }
 
     def "should capture single path parameter"() {
@@ -25,7 +25,7 @@ class RouterPatternSpec extends Specification {
         def pattern = RoutePattern.compile("/users/{id}", false, false, false)
 
         when:
-        def match = pattern.match(state.patternMatch, "/users/123")
+        def match = pattern.match(state.patternMatch, byteString("/users/123"))
 
         then:
         match != null
@@ -37,7 +37,7 @@ class RouterPatternSpec extends Specification {
         def pattern = RoutePattern.compile("/users/{id}/groups/{gid}/roles/{rid}", false, false, false)
 
         when:
-        def match = pattern.match(state.patternMatch, "/users/123/groups/9876/roles/xx")
+        def match = pattern.match(state.patternMatch, byteString("/users/123/groups/9876/roles/xx"))
 
         then:
         match != null
@@ -52,7 +52,7 @@ class RouterPatternSpec extends Specification {
         def pattern = RoutePattern.compile("/files/<path>", false, false, false)
 
         when:
-        def match = pattern.match(state.patternMatch, "/files/a/b/c")
+        def match = pattern.match(state.patternMatch, byteString("/files/a/b/c"))
 
         then:
         match != null
@@ -64,7 +64,7 @@ class RouterPatternSpec extends Specification {
         def pattern = RoutePattern.compile("*", false, false, false)
 
         expect:
-        pattern.match(state.patternMatch, "/anything/here") != null
+        pattern.match(state.patternMatch, byteString("/anything/here")) != null
     }
 
     def "should match trailing wildcard under api path"() {
@@ -72,9 +72,9 @@ class RouterPatternSpec extends Specification {
         def pattern = RoutePattern.compile("/api/<path>*", false, false, false)
 
         expect:
-        pattern.match(state.patternMatch, "/api/x") != null
-        pattern.match(state.patternMatch, "/api/v1/users") != null
-        pattern.match(state.patternMatch, "/apix") == null
+        pattern.match(state.patternMatch, byteString("/api/x")) != null
+        pattern.match(state.patternMatch, byteString("/api/v1/users")) != null
+        pattern.match(state.patternMatch, byteString("/apix")) == null
     }
 
     def "should match case-insensitively when enabled"() {
@@ -82,7 +82,7 @@ class RouterPatternSpec extends Specification {
         def pattern = RoutePattern.compile("/Users/{id}", false, false, true)
 
         expect:
-        pattern.match(state.patternMatch, "/users/ABC") != null
+        pattern.match(state.patternMatch, byteString("/users/ABC")) != null
     }
 
     def "should reject duplicate parameter names"() {
@@ -98,7 +98,7 @@ class RouterPatternSpec extends Specification {
         def pattern = RoutePattern.compile(rawPath, false, false, false)
 
         when:
-        def match = pattern.match(state.patternMatch, requestPath)
+        def match = pattern.match(state.patternMatch, byteString(requestPath))
 
         then:
         match != null
@@ -120,7 +120,7 @@ class RouterPatternSpec extends Specification {
         def pattern = RoutePattern.compile(rawPath, false, false, true)
 
         when:
-        def match = pattern.match(state.patternMatch, requestPath)
+        def match = pattern.match(state.patternMatch, byteString(requestPath))
 
         then:
         match != null
