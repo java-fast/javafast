@@ -550,8 +550,6 @@ public final class TransportBuffer implements AutoCloseable {
         /**
          * TODO after benchmarking, try 8-byte SWAR scanning?
          * Checks if the next characters match the expected string, ignoring the ASCII case.
-         *
-         * @param expected must be in lowercase
          */
         public boolean matchesAsciiIgnoreCase(String expected, int ooffset, int len) {
             if (remaining() < len) {
@@ -560,10 +558,14 @@ public final class TransportBuffer implements AutoCloseable {
 
             for (int i = 0; i < len; i++) {
                 byte actual = getAt(this.position + i);
+                char expectedChar = expected.charAt(i + ooffset);
                 if (actual >= 'A' && actual <= 'Z') {
                     actual |= 0x20;
                 }
-                if (actual != expected.charAt(i + ooffset)) {
+                if (expectedChar >= 'A' && expectedChar <= 'Z') {
+                    expectedChar |= 0x20;
+                }
+                if (actual != expectedChar) {
                     return false;
                 }
             }
