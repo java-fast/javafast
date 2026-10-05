@@ -9,19 +9,19 @@ import java.util.concurrent.TimeUnit;
 
 /**
  * Benchmark                                                          Mode  Cnt    Score    Error   Units
- * RouterMatchBenchmark.compositeParamRouteMatch                      avgt    5  137.639 ±  1.581   ns/op
+ * RouterMatchBenchmark.compositeParamRouteMatch                      avgt    5  135.814 ±  0.643   ns/op
  * RouterMatchBenchmark.compositeParamRouteMatch:·gc.alloc.rate       avgt    5   ≈ 10⁻⁴           MB/sec
  * RouterMatchBenchmark.compositeParamRouteMatch:·gc.alloc.rate.norm  avgt    5   ≈ 10⁻⁵             B/op
  * RouterMatchBenchmark.compositeParamRouteMatch:·gc.count            avgt    5      ≈ 0           counts
- * RouterMatchBenchmark.nestedParamRouteMatch                         avgt    5   96.702 ±  0.506   ns/op
+ * RouterMatchBenchmark.nestedParamRouteMatch                         avgt    5   92.276 ±  0.873   ns/op
  * RouterMatchBenchmark.nestedParamRouteMatch:·gc.alloc.rate          avgt    5   ≈ 10⁻⁴           MB/sec
  * RouterMatchBenchmark.nestedParamRouteMatch:·gc.alloc.rate.norm     avgt    5   ≈ 10⁻⁵             B/op
  * RouterMatchBenchmark.nestedParamRouteMatch:·gc.count               avgt    5      ≈ 0           counts
- * RouterMatchBenchmark.paramRouteMatch                               avgt    5   37.578 ±  0.644   ns/op
+ * RouterMatchBenchmark.paramRouteMatch                               avgt    5   40.535 ±  0.268   ns/op
  * RouterMatchBenchmark.paramRouteMatch:·gc.alloc.rate                avgt    5   ≈ 10⁻⁴           MB/sec
  * RouterMatchBenchmark.paramRouteMatch:·gc.alloc.rate.norm           avgt    5   ≈ 10⁻⁶             B/op
  * RouterMatchBenchmark.paramRouteMatch:·gc.count                     avgt    5      ≈ 0           counts
- * RouterMatchBenchmark.staticRouteMatch                              avgt    5   19.658 ±  0.056   ns/op
+ * RouterMatchBenchmark.staticRouteMatch                              avgt    5   16.999 ±  0.206   ns/op
  * RouterMatchBenchmark.staticRouteMatch:·gc.alloc.rate               avgt    5   ≈ 10⁻⁴           MB/sec
  * RouterMatchBenchmark.staticRouteMatch:·gc.alloc.rate.norm          avgt    5   ≈ 10⁻⁶             B/op
  * RouterMatchBenchmark.staticRouteMatch:·gc.count                    avgt    5      ≈ 0           counts
