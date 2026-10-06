@@ -32,7 +32,7 @@ final class RequestContext implements Context {
     private AppData appData;
 
     private HttpMethod method;
-    final ByteString path = new ByteString();
+    final ByteString path = new ByteString(32);
 
     private String queryString;
 
@@ -539,11 +539,6 @@ final class RequestContext implements Context {
 
     void setPathParamMap(PathParams pathParamMap) {
         this.pathParamMap = pathParamMap;
-    }
-
-    void setHeaderMap(Map<String, String> headerMap) {
-        // TODO remove extra copy? We can internally always set an unmodifiable map
-        this.headerMap = Map.copyOf(headerMap);
     }
 
     void writeResponse() throws Exception {

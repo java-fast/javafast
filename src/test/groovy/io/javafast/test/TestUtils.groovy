@@ -78,7 +78,7 @@ trait TestUtils implements Logger {
             e.printStackTrace();
         }
 
-        final ByteString bs = new ByteString();
+        final ByteString bs = new ByteString(32)
         bs.reset(writer.reader(), 0, writer.totalWritten());
         return bs;
     }

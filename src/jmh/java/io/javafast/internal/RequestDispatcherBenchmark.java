@@ -40,6 +40,32 @@ public class RequestDispatcherBenchmark {
     }
 
     @State(Scope.Thread)
+    public static class GetCompositeState {
+        private final HttpRequestSource request = new HttpRequestSource();
+        private TransportBuffer buffer;
+        private TransportBuffer.Writer writer;
+        private RequestContextPool pool;
+        private DefaultHttpRequestDispatcher dispatcher;
+
+        @Setup(Level.Trial)
+        public void setup() {
+            this.buffer = TransportBuffer.create(128, 1);
+
+            final DefaultRouting routing = new DefaultRouting();
+            routing.get("/file-{name}.txt", ctx -> {});
+
+            this.pool = RequestContextPool.create(1);
+            this.dispatcher = new DefaultHttpRequestDispatcher(this.pool, routing, new AppDataManager());
+            this.writer = this.request.encode(this.buffer, "GET", "/file-reports.txt", null, null);
+        }
+
+        @TearDown(Level.Trial)
+        public void tearDown() {
+            this.buffer.close();
+        }
+    }
+
+    @State(Scope.Thread)
     public static class PostState {
         private final HttpRequestSource request = new HttpRequestSource();
         private TransportBuffer buffer;
@@ -70,6 +96,12 @@ public class RequestDispatcherBenchmark {
 
     @Benchmark
     public int dispatchGet(GetState state) throws Exception {
+        state.dispatcher.dispatch(state.writer.reader());
+        return state.pool.get().statusCode();
+    }
+
+    @Benchmark
+    public int dispatchGetComposite(GetCompositeState state) throws Exception {
         state.dispatcher.dispatch(state.writer.reader());
         return state.pool.get().statusCode();
     }

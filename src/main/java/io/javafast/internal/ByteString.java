@@ -2,6 +2,8 @@ package io.javafast.internal;
 
 import io.javafast.transport.TransportBuffer;
 
+import java.nio.charset.StandardCharsets;
+
 /**
  * An immutable sequence of bytes representing a string-like structure. This class provides
  * methods for handling and interpreting byte data as an ASCII-compatible string.
@@ -16,12 +18,20 @@ public final class ByteString {
     private int length;
 
     private String value; // lazy cache
+    private final byte[] bytes; // value scratch buffer
+
+    public ByteString(int bufferSize) {
+        this.bytes = new byte[bufferSize];
+    }
 
     public void reset(TransportBuffer.Reader reader, int position, int length) {
         this.reader = reader;
         this.position = position;
         this.length = length;
         this.value = null;
+        if (this.length <= this.bytes.length) {
+            reader.copyTo(this.position, this.bytes, 0, this.length);
+        }
     }
 
     public int length() {
@@ -30,6 +40,9 @@ public final class ByteString {
 
     public byte byteAt(int index) {
         checkIndex(index);
+        if (this.length <= this.bytes.length) {
+            return this.bytes[index];
+        }
         return this.reader.getAt(this.position + index);
     }
 
@@ -46,6 +59,19 @@ public final class ByteString {
             || ooffset > ascii.length() - len) {
             return false;
         }
+
+        if (this.length <= this.bytes.length) { // for small strings, compare bytes directly
+            for (int i = 0; i < len; i++) {
+                final byte actual = this.bytes[toffset + i];
+                final byte expected = (byte) ascii.charAt(ooffset + i);
+                if (actual != expected &&
+                    (!ignoreCase || (actual | 0x20) != (expected | 0x20))) {
+                    return false;
+                }
+            }
+            return true;
+        }
+
         this.reader.position(this.position + toffset);
         if (ignoreCase) {
             return this.reader.matchesAsciiIgnoreCase(ascii, ooffset, len);
@@ -55,6 +81,9 @@ public final class ByteString {
 
     public String substring(int beginIndex, int endIndex) {
         checkRange(beginIndex, endIndex);
+        if (this.length <= this.bytes.length) {
+            return new String(this.bytes, beginIndex, endIndex - beginIndex, StandardCharsets.US_ASCII);
+        }
         return this.reader.getAscii(this.position + beginIndex, endIndex - beginIndex);
     }
 
@@ -62,12 +91,18 @@ public final class ByteString {
         if (1 > this.length) {
             return false;
         }
+        if (this.length <= this.bytes.length) {
+            return this.bytes[this.length - 1] == c;
+        }
         return this.reader.getAt(this.position + this.length - 1) == c;
     }
 
     public boolean contentEquals(char other) {
         if (1 != this.length) {
             return false;
+        }
+        if (this.length <= this.bytes.length) {
+            return this.bytes[0] == other;
         }
         return this.reader.getAt(this.position) == other;
     }
@@ -82,7 +117,11 @@ public final class ByteString {
     @Override
     public String toString() {
         if (this.value == null) {
-            this.value = this.reader.getAscii(this.position, this.length);
+            if (this.length <= this.bytes.length) {
+                this.value = new String(this.bytes, 0, this.length, StandardCharsets.US_ASCII);
+            } else {
+                this.value = this.reader.getAscii(this.position, this.length);
+            }
         }
         return this.value;
     }

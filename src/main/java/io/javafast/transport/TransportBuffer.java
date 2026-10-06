@@ -452,6 +452,7 @@ public final class TransportBuffer implements AutoCloseable {
                 return value;
             }
 
+            // TODO how to handle native byte order?
             // Cross-block
             long value = getUnsignedByte();
             value = (value << 8) | getUnsignedByte();
@@ -777,7 +778,7 @@ public final class TransportBuffer implements AutoCloseable {
                 throw new IndexOutOfBoundsException();
             }
 
-            if ((long) offset + length > limit()) {
+            if (offset + length > limit()) {
                 throw new IndexOutOfBoundsException("Not enough data: offset=" + offset + ", length=" + length);
             }
 
@@ -792,8 +793,7 @@ public final class TransportBuffer implements AutoCloseable {
                 final MemorySegment segment = block.payload();
                 final int available = written(block) - blockOffset;
                 final int count = Math.min(available, remaining);
-
-                MemorySegment.copy(segment, ValueLayout.JAVA_BYTE, blockOffset, destination, destinationOffset + dest, count);
+                MemorySegment.copy(segment, ValueLayout.JAVA_BYTE, blockOffset, destination, dest, count);
 
                 remaining -= count;
                 dest += count;
