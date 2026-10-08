@@ -2,8 +2,8 @@ package io.javafast.transport;
 
 public final class HttpProtocolHandler implements ProtocolHandler {
 
-    // TODO implement checks here
     private static final int MAX_REQUEST_SIZE = Integer.getInteger("javafast.max.request.size", 10 * (1 << 20)); // aka 10MB
+    private static final int MAX_HEADER_SIZE = Integer.getInteger("javafast.max.request.header.size", 1 << 13); // aka 8KB
     private static final int MAX_BODY_SIZE = Integer.getInteger("javafast.max.request.body.size", 1 << 23); // aka 8MB
 
     private static final byte CR = '\r';
@@ -23,6 +23,7 @@ public final class HttpProtocolHandler implements ProtocolHandler {
 
     private State state = State.HEADERS;
 
+    private long requestLength;
     private long contentLength;
     private boolean contentLengthFound;
     private long bodyRemaining;
@@ -31,6 +32,11 @@ public final class HttpProtocolHandler implements ProtocolHandler {
     public void onBytes(TransportBuffer.Reader reader, int bytes) {
         if (this.state == State.COMPLETE) {
             return;
+        }
+
+        this.requestLength += bytes;
+        if (this.requestLength > MAX_REQUEST_SIZE) {
+            throw HttpRequestException.REQUEST_TOO_LARGE;
         }
 
         if (this.state == State.HEADERS) {
@@ -53,6 +59,9 @@ public final class HttpProtocolHandler implements ProtocolHandler {
         reader.skip(reader.indexOf(CR, LF) + 2); // skip request line
         int consumed;
         while (true) {
+            if (reader.position() > MAX_HEADER_SIZE) {
+                throw HttpRequestException.REQUEST_TOO_LARGE;
+            }
             consumed = 0;
             final int length = reader.indexOf(CR, LF);
             if (length < 0) {
@@ -66,12 +75,18 @@ public final class HttpProtocolHandler implements ProtocolHandler {
                     return;
                 }
                 this.bodyRemaining = this.contentLength;
+                if (this.bodyRemaining > MAX_BODY_SIZE) {
+                    throw HttpRequestException.REQUEST_TOO_LARGE;
+                }
                 this.state = State.BODY;
                 return;
             }
             // Check Content-Length before skipping the header.
             if (reader.matchesAsciiIgnoreCase(CONTENT_LENGTH)) {
                 consumed = parseContentLength(reader);
+            }
+            if (reader.matchesAsciiIgnoreCase(TRANSFER_ENCODING)) {
+                consumed = parseTransferEncoding(reader);
             }
             // Skip this header line including CRLF.
             reader.skip(length - consumed + 2);
@@ -101,6 +116,11 @@ public final class HttpProtocolHandler implements ProtocolHandler {
         return consumed;
     }
 
+    private int parseTransferEncoding(TransportBuffer.Reader reader) {
+        // TODO implement chunked parsing
+        return 0;
+    }
+
     @Override
     public boolean payloadComplete() {
         return this.state == State.COMPLETE;
@@ -109,6 +129,7 @@ public final class HttpProtocolHandler implements ProtocolHandler {
     @Override
     public void reset() {
         this.state = State.HEADERS;
+        this.requestLength = 0;
         this.contentLength = 0;
         this.contentLengthFound = false;
         this.bodyRemaining = 0;

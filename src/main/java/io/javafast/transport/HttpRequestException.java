@@ -2,27 +2,14 @@ package io.javafast.transport;
 
 public class HttpRequestException extends RuntimeException {
 
-    public HttpRequestException(String message) {
-        super(message);
+    public static final HttpRequestException NOT_SUPPORTED = new HttpRequestException();
+    public static final HttpRequestException MALFORMED = new HttpRequestException();
+    public static final HttpRequestException TOO_MANY_HEADERS = new HttpRequestException();
+    public static final HttpRequestException UNSUPPORTED_TRANSFER_ENCODING = new HttpRequestException();
+    public static final HttpRequestException REQUEST_TOO_LARGE = new HttpRequestException();
+
+    private HttpRequestException() {
+        super(null, null, false, false); // no stacktrace, no state
     }
 
-    public static HttpRequestException notSupported() {
-        return new HttpRequestException("HTTP Version is not supported");
-    }
-
-    public static HttpRequestException malformed() {
-        return new HttpRequestException("Malformed request");
-    }
-
-    public static HttpRequestException tooManyHeaders() {
-        return new HttpRequestException("Too many headers");
-    }
-
-    public static HttpRequestException unsupportedTransferEncoding() {
-        return new HttpRequestException("Unsupported transfer encoding");
-    }
-
-    public static HttpRequestException requestTooLarge() {
-        return new HttpRequestException("Request too large");
-    }
 }

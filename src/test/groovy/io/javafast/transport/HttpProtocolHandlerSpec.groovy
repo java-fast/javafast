@@ -5,6 +5,58 @@ import spock.lang.Specification
 
 class HttpProtocolHandlerSpec extends Specification implements TestUtils {
 
+    def "should throw when request size exceeds MAX_REQUEST_SIZE"() {
+        given:
+        def http = encodedExchange('GET', '/status')
+        def handler = new HttpProtocolHandler()
+
+        when:
+        handler.onBytes(http.reader, (10 * (1 << 20)) + 1)
+
+        then:
+        def ex = thrown(HttpRequestException)
+        ex.is(HttpRequestException.REQUEST_TOO_LARGE)
+
+        cleanup:
+        http.block.release()
+        http.buffer.close()
+    }
+
+    def "should throw when header size exceeds MAX_HEADER_SIZE"() {
+        given:
+        def largeHeaderValue = 'a' * (1 << 13)
+        def http = encodedExchange('GET', '/status', null, ['X-Large': largeHeaderValue], 16 * 1024)
+        def handler = new HttpProtocolHandler()
+
+        when:
+        handler.onBytes(http.reader, (int) http.reader.remaining())
+
+        then:
+        def ex = thrown(HttpRequestException)
+        ex.is(HttpRequestException.REQUEST_TOO_LARGE)
+
+        cleanup:
+        http.block.release()
+        http.buffer.close()
+    }
+
+    def "should throw when body size exceeds MAX_BODY_SIZE"() {
+        given:
+        def http = encodedExchange('POST', '/users', null, ['Content-Length': "${(1 << 23) + 1}"])
+        def handler = new HttpProtocolHandler()
+
+        when:
+        handler.onBytes(http.reader, (int) http.reader.remaining())
+
+        then:
+        def ex = thrown(HttpRequestException)
+        ex.is(HttpRequestException.REQUEST_TOO_LARGE)
+
+        cleanup:
+        http.block.release()
+        http.buffer.close()
+    }
+
     def "should mark payload complete for request without body"() {
         given:
         def http = encodedExchange('GET', '/status')
@@ -117,8 +169,8 @@ class HttpProtocolHandlerSpec extends Specification implements TestUtils {
         second.buffer.close()
     }
 
-    private Map encodedExchange(String method, String uri, String body = null, Map<String, String> headers = [:]) {
-        def buffer = TransportBuffer.create(256, 2)
+    private Map encodedExchange(String method, String uri, String body = null, Map<String, String> headers = [:], int bufferSize = 256) {
+        def buffer = TransportBuffer.create(bufferSize, 2)
         def encoder = new HttpTestRequestEncoder()
         def ex = exchange(method, uri, body)
         headers.each { name, value ->
