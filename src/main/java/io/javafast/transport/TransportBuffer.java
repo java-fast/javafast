@@ -278,6 +278,7 @@ public final class TransportBuffer implements AutoCloseable {
                 }
                 final Block next = acquire();
                 if (next == null) {
+                    this.totalWritten += read;
                     throw new BufferOverflowException();
                 }
                 this.current.link(next);

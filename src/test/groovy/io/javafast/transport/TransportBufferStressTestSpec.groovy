@@ -197,7 +197,7 @@ class TransportBufferStressTestSpec extends Specification implements TransportUt
                 try {
                     if (writer.read(source) < 0) break
                 } catch (BufferOverflowException ignored) {
-                    Thread.sleep(1) // if buffer overflow then wait and retry
+                    Thread.sleep(1) // if buffer overflows, then wait and retry
                 }
             }
             return writer.head()

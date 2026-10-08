@@ -1,7 +1,5 @@
 package io.javafast.transport;
 
-import java.io.IOException;
-import java.io.UncheckedIOException;
 import java.nio.BufferOverflowException;
 import java.nio.ByteBuffer;
 import java.nio.channels.ReadableByteChannel;
@@ -28,20 +26,27 @@ public interface TransportTestSource extends ReadableByteChannel {
     int read(ByteBuffer destination);
 
     default TransportBuffer.Writer copyTo(TransportBuffer buffer) {
-        final TransportBuffer.Writer writer = buffer.writer();
-        if (writer == null) {
-            throw new BufferOverflowException();
-        }
         try {
-            final long time = System.currentTimeMillis();
-            while (System.currentTimeMillis() - time < 100) { // read timeout 100 milliseconds
-                // -1 semantics cause an infinite loop here
-                // a channel can return always 0 if the buffer is exhausted
-                if (writer.read(this) < 0) break;
+            while (true) {
+                final TransportBuffer.Writer writer = buffer.writer();
+                if (writer == null) {
+                    Thread.sleep(1); // if buffer overflows, then wait and retry
+                    continue;
+                }
+                final long time = System.currentTimeMillis();
+                while (System.currentTimeMillis() - time < 100) { // read timeout 100 milliseconds
+                    try {
+                        // -1 semantics cause an infinite loop here
+                        // a channel can return always 0 if the buffer is exhausted
+                        if (writer.read(this) < 0) break;
+                    } catch (BufferOverflowException _) {
+                        Thread.sleep(1); // if buffer overflows, then wait and retry
+                    }
+                }
+                return writer;
             }
-            return writer;
-        } catch (IOException e) {
-            throw new UncheckedIOException(e);
+        } catch (Exception e) {
+            throw new RuntimeException(e);
         }
     }
 
