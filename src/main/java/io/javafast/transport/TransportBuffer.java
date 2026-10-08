@@ -266,7 +266,7 @@ public final class TransportBuffer implements AutoCloseable {
                 this.head = this.current;
             }
             int read = 0;
-            for (; ; ) {
+            while (true) {
                 final ByteBuffer target = this.current.byteBuffer;
                 final int written = channel.read(target);
                 if (written < 0) {

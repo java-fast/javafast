@@ -1,7 +1,6 @@
 package io.javafast.transport
 
 import io.javafast.test.TransportUtils
-import spock.lang.RepeatUntilFailure
 import spock.lang.Specification
 import spock.util.concurrent.AsyncConditions
 
@@ -186,16 +185,20 @@ class TransportBufferStressTestSpec extends Specification implements TransportUt
     }
 
     private TransportBuffer.Block writeEventually(TransportBuffer buffer, byte[] data, List<Integer> chunkSizes) {
+        def source = transportSource(data, chunkSizes)
         while (true) {
             def writer = buffer.writer()
             if (writer == null) {
                 Thread.sleep(1)
                 continue
             }
-            def source = transportSource(data, chunkSizes)
             final long time = System.currentTimeMillis()
             while (System.currentTimeMillis() - time < 100) { // read timeout 100 milliseconds
-                if (writer.read(source) < 0) break
+                try {
+                    if (writer.read(source) < 0) break
+                } catch (BufferOverflowException ignored) {
+                    Thread.sleep(1) // if buffer overflow then wait and retry
+                }
             }
             return writer.head()
         }
