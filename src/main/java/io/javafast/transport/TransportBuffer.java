@@ -28,7 +28,11 @@ import java.nio.charset.StandardCharsets;
 public final class TransportBuffer implements AutoCloseable {
 
     public static TransportBuffer create(int blockSize, int blockCount) {
-        return new TransportBuffer(blockSize, blockCount);
+        return create(blockSize, blockCount, Boolean.getBoolean("javafast.vectorized.reader"));
+    }
+
+    public static TransportBuffer create(int blockSize, int blockCount, boolean useVectors) {
+        return new TransportBuffer(blockSize, blockCount, useVectors);
     }
 
     private static boolean isNotPowerOfTwo(int n) {
@@ -55,6 +59,7 @@ public final class TransportBuffer implements AutoCloseable {
     private final int nextBlockOffset;
 
     private final Block[] blocks;
+    private final boolean useVectors;
 
     /*
      * Only for probing hints.
@@ -65,7 +70,7 @@ public final class TransportBuffer implements AutoCloseable {
 
     private volatile boolean closed;
 
-    private TransportBuffer(int blockSize, int blockCount) {
+    private TransportBuffer(int blockSize, int blockCount, boolean useVectors) {
         if (blockSize < 64) {
             throw new IllegalArgumentException("blockSize must be >= 64");
         }
@@ -82,6 +87,7 @@ public final class TransportBuffer implements AutoCloseable {
 
         final MemorySegment mainBuffer = this.arena.allocate((long) blockSize * blockCount, 8);
         this.blocks = new Block[blockCount];
+        this.useVectors = useVectors;
 
         for (int i = 0; i < blockCount; i++) {
             final long offset = (long) i * blockSize;
@@ -176,7 +182,7 @@ public final class TransportBuffer implements AutoCloseable {
     public final class Block {
 
         private final Writer writer = new Writer();
-        private final Reader reader = new Reader(this);
+        private final Reader reader = useVectors ? new VectorizedReader(this) : new ReaderImpl(this);
 
         private final int index;
         private final MemorySegment segment; // [state][payload][next]
@@ -328,72 +334,181 @@ public final class TransportBuffer implements AutoCloseable {
 
     }
 
-    public final class Reader {
+    public sealed interface Reader permits ReaderImpl {
+        int position();
 
-        private static final VectorSpecies<Byte> SPECIES = ByteVector.SPECIES_PREFERRED;
-        private static final long ONES = 0x0101010101010101L;
-        private static final long HIGHS = 0x8080808080808080L;
+        Reader position(int position);
 
-        private final Block head;
-        private Block current;
+        int written(Block block);
 
-        private int currentOffset;
+        int limit();
+
+        int remaining();
+
+        boolean hasRemaining();
 
         /**
-         * Logical position within the request.
-         * Request size is bounded by MAX_REQUEST_SIZE, therefore an int is enough.
+         * Returns the next byte without advancing the cursor.
+         */
+        byte peek();
+
+        /**
+         * Returns the next byte and advances the cursor by one.
+         */
+        byte get();
+
+        int getUnsignedByte();
+
+        /**
+         * Reads a big-endian long and advances by eight bytes
+         * Handles block boundaries
+         */
+        long getLong();
+
+        /**
+         * Advances the cursor by length bytes
+         */
+        Reader skip(int length);
+
+        /**
+         * Moves the cursor to the beginning.
+         */
+        void reset();
+
+        /**
+         * Checks whether the bytes at the current position match the value
+         */
+        boolean matchesAscii(String value);
+
+        /**
+         * Checks whether the bytes at the current position match the value
+         *
+         * @param value  the value to match
+         * @param offset the offset within the value
+         * @param len    the length of the value
+         */
+        boolean matchesAscii(String value, int offset, int len);
+
+        /**
+         * Checks if the next characters match the expected string, ignoring the ASCII case
+         *
+         * @param expected the expected string
+         */
+        boolean matchesAsciiIgnoreCase(String expected);
+
+        /**
+         * Checks if the next characters match the expected string, ignoring the ASCII case
+         *
+         * @param expected the expected string
+         * @param offset   the offset within the expected string
+         * @param len      the length of the expected string
+         */
+        boolean matchesAsciiIgnoreCase(String expected, int offset, int len);
+
+        /**
+         * Consumes one byte if it matches.
+         */
+        boolean consume(byte expected);
+
+        /**
+         * Consumes two bytes sequentially based on the wire's endianness.
+         */
+        boolean consume(byte first, byte second);
+
+        /**
+         * Consumes an ASCII string if it matches.
+         */
+        boolean consumeAscii(String value);
+
+        /**
+         * Finds value starting from the current cursor position.
+         * Does not modify the cursor.
+         *
+         * @return cursor relative position (length)
+         */
+        int indexOf(byte value);
+
+        /**
+         * Finds a two-byte value starting from the current cursor position.
+         * Handles block boundaries.
+         * Checks two bytes on the wire sequentially. Therefore, it depends on the wire's endianness.
+         *
+         * @return cursor relative position (length)
+         */
+        int indexOf(byte first, byte second);
+
+        /**
+         * Retrieves the byte at the specified position without modifying the cursor
+         *
+         * @param position the zero-based index of the byte to retrieve
+         * @return the byte located at the specified position
+         */
+        byte getAt(int position);
+
+        String getAscii(int offset, int length);
+
+        String getUtf8(int offset, int length);
+
+        void copyTo(int offset, byte[] destination, int destinationOffset, int length);
+
+    }
+
+    public sealed class ReaderImpl implements Reader permits VectorizedReader {
+
+        private final Block head;
+
+        Block current;
+        int currentOffset;
+
+        /**
+         * Logical position within the request. Request size is bounded by MAX_REQUEST_SIZE.
+         * Therefore, an int is enough.
          */
         private int position;
 
-        private Reader(Block head) {
+        private ReaderImpl(Block head) {
             this.head = head;
             this.current = this.head;
         }
 
-        void release() {
-            this.head.release();
-        }
-
+        @Override
         public int position() {
             return this.position;
         }
 
+        @Override
         public Reader position(int position) {
             locate(position);
             return this;
         }
 
+        @Override
         public int written(Block block) {
             return block.byteBuffer.position();
         }
 
+        @Override
         public int limit() {
             return this.head.writer.totalWritten;
         }
 
+        @Override
         public int remaining() {
             return limit() - this.position;
         }
 
+        @Override
         public boolean hasRemaining() {
             return this.position < limit();
         }
 
-        // -------------------------------------------------------------------------
-        // Cursor
-        // -------------------------------------------------------------------------
-
-        /**
-         * Returns the next byte without advancing the cursor.
-         */
+        @Override
         public byte peek() {
             ensureAvailable();
             return this.current.payload().get(ValueLayout.JAVA_BYTE, this.currentOffset);
         }
 
-        /**
-         * Returns the next byte and advances the cursor by one.
-         */
+        @Override
         public byte get() {
             ensureAvailable();
             final byte value = this.current.payload().get(ValueLayout.JAVA_BYTE, this.currentOffset);
@@ -402,6 +517,7 @@ public final class TransportBuffer implements AutoCloseable {
             return value;
         }
 
+        @Override
         public int getUnsignedByte() {
             return get() & 0xff;
         }
@@ -456,10 +572,7 @@ public final class TransportBuffer implements AutoCloseable {
             return value;
         }
 
-        /**
-         * Reads a big-endian long and advances by eight bytes.
-         * Handles block boundaries.
-         */
+        @Override
         public long getLong() {
             if (remaining() < 8) {
                 throw new IndexOutOfBoundsException("Not enough data");
@@ -487,9 +600,7 @@ public final class TransportBuffer implements AutoCloseable {
             return value;
         }
 
-        /**
-         * Advances the cursor by length bytes.
-         */
+        @Override
         public Reader skip(int length) {
             if (length < 0) {
                 throw new IllegalArgumentException("length < 0");
@@ -501,33 +612,20 @@ public final class TransportBuffer implements AutoCloseable {
             return this;
         }
 
-        /**
-         * Moves the cursor to the beginning.
-         */
-        void reset() {
+        @Override
+        public void reset() {
             this.current = this.head;
             this.currentOffset = 0;
             this.position = 0;
         }
 
-        /**
-         * Moves the cursor to the end.
-         */
-        public Reader skipRemaining() {
-            this.current = null;
-            this.currentOffset = 0;
-            this.position = limit();
-            return this;
+        @Override
+        public boolean matchesAscii(String value) {
+            return matchesAscii(value, 0, value.length());
         }
 
-        // -------------------------------------------------------------------------
-        // Matching
-        // -------------------------------------------------------------------------
-
-        /**
-         * Checks whether the bytes at the current position match value.
-         */
-        public boolean matchesAscii(String value, int ooffset, int len) {
+        @Override
+        public boolean matchesAscii(String value, int offset, int len) {
             if (len > remaining()) {
                 return false;
             }
@@ -538,7 +636,7 @@ public final class TransportBuffer implements AutoCloseable {
 
             Block block = this.current;
             int blockOffset = this.currentOffset;
-            int valueOffset = ooffset;
+            int valueOffset = offset;
             int remaining = len;
 
             while (block != null && remaining > 0) {
@@ -565,21 +663,20 @@ public final class TransportBuffer implements AutoCloseable {
             return true;
         }
 
-        public boolean matchesAscii(String value) {
-            return matchesAscii(value, 0, value.length());
+        @Override
+        public boolean matchesAsciiIgnoreCase(String expected) {
+            return matchesAsciiIgnoreCase(expected, 0, expected.length());
         }
 
-        /**
-         * Checks if the next characters match the expected string, ignoring the ASCII case.
-         */
-        public boolean matchesAsciiIgnoreCase(String expected, int ooffset, int len) {
+        @Override
+        public boolean matchesAsciiIgnoreCase(String expected, int offset, int len) {
             if (remaining() < len) {
                 return false;
             }
 
             for (int i = 0; i < len; i++) {
                 byte actual = getAt(this.position + i);
-                char expectedChar = expected.charAt(i + ooffset);
+                char expectedChar = expected.charAt(i + offset);
                 if (actual >= 'A' && actual <= 'Z') {
                     actual |= 0x20;
                 }
@@ -594,14 +691,7 @@ public final class TransportBuffer implements AutoCloseable {
             return true;
         }
 
-        public boolean matchesAsciiIgnoreCase(String expected) {
-            final int length = expected.length();
-            return matchesAsciiIgnoreCase(expected, 0, length);
-        }
-
-        /**
-         * Consumes one byte if it matches.
-         */
+        @Override
         public boolean consume(byte expected) {
             if (!hasRemaining()) {
                 return false;
@@ -613,9 +703,7 @@ public final class TransportBuffer implements AutoCloseable {
             return true;
         }
 
-        /**
-         * Consumes two bytes sequentially based on the wire's endianness.
-         */
+        @Override
         public boolean consume(byte first, byte second) {
             if (remaining() < 2) {
                 return false;
@@ -643,9 +731,7 @@ public final class TransportBuffer implements AutoCloseable {
             return true;
         }
 
-        /**
-         * Consumes an ASCII string if it matches.
-         */
+        @Override
         public boolean consumeAscii(String value) {
             if (!matchesAscii(value)) {
                 return false;
@@ -654,16 +740,7 @@ public final class TransportBuffer implements AutoCloseable {
             return true;
         }
 
-        // -------------------------------------------------------------------------
-        // Search
-        // -------------------------------------------------------------------------
-
-        /**
-         * Finds value starting from the current cursor position.
-         * Does not modify the cursor.
-         *
-         * @return cursor relative position (length)
-         */
+        @Override
         public int indexOf(byte value) {
             Block block = this.current;
             int blockOffset = this.currentOffset;
@@ -685,40 +762,6 @@ public final class TransportBuffer implements AutoCloseable {
             return -1;
         }
 
-        public int indexOfVector(byte value) {
-            Block block = this.current;
-            int blockOffset = this.currentOffset;
-            int relativePos = 0;
-
-            while (block != null) {
-                final MemorySegment segment = block.payload();
-                final int end = written(block);
-                int i = blockOffset;
-
-                // Process a full vector at a time
-                for (; i <= end - SPECIES.length(); i += SPECIES.length()) {
-                    final ByteVector vector = ByteVector.fromMemorySegment(SPECIES, segment, i, ByteOrder.nativeOrder());
-                    final VectorMask<Byte> matches = vector.compare(VectorOperators.EQ, value);
-                    if (matches.anyTrue()) {
-                        return relativePos + (i - blockOffset) + matches.firstTrue();
-                    }
-                }
-
-                // Scalar tail.
-                for (; i < end; i++) {
-                    if (segment.get(ValueLayout.JAVA_BYTE, i) == value) {
-                        return relativePos + (i - blockOffset);
-                    }
-                }
-
-                relativePos += end - blockOffset;
-                block = block.next();
-                blockOffset = 0;
-            }
-
-            return -1;
-        }
-
         /**
          * Finds a two-byte value starting from the current cursor position.
          * Handles block boundaries.
@@ -726,6 +769,7 @@ public final class TransportBuffer implements AutoCloseable {
          *
          * @return cursor relative position (length)
          */
+        @Override
         public int indexOf(byte first, byte second) {
             Block block = this.current;
             int blockOffset = this.currentOffset;
@@ -782,51 +826,37 @@ public final class TransportBuffer implements AutoCloseable {
             return result;
         }
 
-        // -------------------------------------------------------------------------
-        // Relative string/bytes
-        // -------------------------------------------------------------------------
+        @Override
+        public byte getAt(int position) {
+            Block block = this.head;
+            long logical = 0;
 
-        public byte[] getBytes(int offset, int length) {
-            if (length < 0) {
-                throw new IllegalArgumentException("length < 0");
+            while (block != null) {
+                final MemorySegment segment = block.payload();
+                final long size = written(block);
+                if (position < logical + size) {
+                    return segment.get(ValueLayout.JAVA_BYTE, position - logical);
+                }
+                logical += size;
+                block = block.next();
             }
-            final byte[] result = new byte[length];
-            copyTo(offset, result, 0, length);
-            return result;
+
+            throw new IndexOutOfBoundsException("Position outside of buffer: " + position);
         }
 
+        @Override
         public String getAscii(int offset, int length) {
             final byte[] bytes = getBytes(offset, length);
             return new String(bytes, StandardCharsets.US_ASCII);
         }
 
+        @Override
         public String getUtf8(int offset, int length) {
             final byte[] bytes = getBytes(offset, length);
             return new String(bytes, StandardCharsets.UTF_8);
         }
 
-        /**
-         * Reads an ASCII string from the current position and advances.
-         */
-        public String getAscii(int length) {
-            final String value = getAscii(this.position, length);
-            advance(length);
-            return value;
-        }
-
-        /**
-         * Reads a UTF-8 string from the current position and advances.
-         */
-        public String getUtf8(int length) {
-            final String value = getUtf8(this.position, length);
-            advance(length);
-            return value;
-        }
-
-        // -------------------------------------------------------------------------
-        // Copy / zero-copy
-        // -------------------------------------------------------------------------
-
+        @Override
         public void copyTo(int offset, byte[] destination, int destinationOffset, int length) {
             if (length < 0 || offset < 0 || destinationOffset < 0 || destinationOffset + length > destination.length) {
                 throw new IndexOutOfBoundsException();
@@ -860,29 +890,18 @@ public final class TransportBuffer implements AutoCloseable {
             }
         }
 
-        /**
-         * Zero-copy only when the range resides entirely inside one block.
-         */
-        public MemorySegment segment(int offset, int length) {
-            if (length < 0 || offset < 0 || (long) offset + length > limit()) {
-                throw new IndexOutOfBoundsException();
-            }
-            locate(offset);
-            if (this.current == null) {
-                return length == 0 ? MemorySegment.NULL : null;
-            }
+        // -------------------------------------------------------------------------
+        // Internal
+        // -------------------------------------------------------------------------
 
-            final MemorySegment segment = this.current.payload();
-            if (this.currentOffset + length > written(this.current)) {
-                return null;
+        private byte[] getBytes(int offset, int length) {
+            if (length < 0) {
+                throw new IllegalArgumentException("length < 0");
             }
-
-            return segment.asSlice(this.currentOffset, length);
+            final byte[] result = new byte[length];
+            copyTo(offset, result, 0, length);
+            return result;
         }
-
-        // -------------------------------------------------------------------------
-        // Internal cursor mechanics
-        // -------------------------------------------------------------------------
 
         private void ensureAvailable() {
             if (this.current == null) {
@@ -936,23 +955,6 @@ public final class TransportBuffer implements AutoCloseable {
             return false;
         }
 
-        public byte getAt(int position) {
-            Block block = this.head;
-            long logical = 0;
-
-            while (block != null) {
-                final MemorySegment segment = block.payload();
-                final long size = written(block);
-                if (position < logical + size) {
-                    return segment.get(ValueLayout.JAVA_BYTE, position - logical);
-                }
-                logical += size;
-                block = block.next();
-            }
-
-            throw new IndexOutOfBoundsException("Position outside of buffer: " + position);
-        }
-
         private void advance(int count) {
             int remaining = count;
 
@@ -998,6 +1000,53 @@ public final class TransportBuffer implements AutoCloseable {
             this.currentOffset = 0;
             this.position = target;
         }
+    }
+
+    public final class VectorizedReader extends ReaderImpl {
+
+        private static final VectorSpecies<Byte> SPECIES = ByteVector.SPECIES_PREFERRED;
+        private final Block head;
+
+        private VectorizedReader(Block head) {
+            super(head);
+            this.head = head;
+        }
+
+        @Override
+        public int indexOf(byte value) {
+            Block block = this.current;
+            int blockOffset = this.currentOffset;
+            int relativePos = 0;
+
+            while (block != null) {
+                final MemorySegment segment = block.payload();
+                final int end = written(block);
+                int i = blockOffset;
+
+                // Process a full vector at a time
+                for (; i <= end - SPECIES.length(); i += SPECIES.length()) {
+                    final ByteVector vector = ByteVector.fromMemorySegment(SPECIES, segment, i, ByteOrder.nativeOrder());
+                    final VectorMask<Byte> matches = vector.compare(VectorOperators.EQ, value);
+                    if (matches.anyTrue()) {
+                        return relativePos + (i - blockOffset) + matches.firstTrue();
+                    }
+                }
+
+                // Scalar tail.
+                for (; i < end; i++) {
+                    if (segment.get(ValueLayout.JAVA_BYTE, i) == value) {
+                        return relativePos + (i - blockOffset);
+                    }
+                }
+
+                relativePos += end - blockOffset;
+                block = block.next();
+                blockOffset = 0;
+            }
+
+            return -1;
+        }
+
     }
 
     /**

@@ -30,7 +30,11 @@ jmh {
     fork = 1
     resultFormat = 'JSON'
     profilers = ['gc']
-    jvmArgsAppend = ['-XX:+UseG1GC']
+    jvmArgsAppend = ['-XX:+UseG1GC', '--add-modules jdk.incubator.vector']
+}
+
+tasks.withType(JavaCompile).configureEach {
+    options.compilerArgs += ['--add-modules', 'jdk.incubator.vector']
 }
 
 test {
@@ -43,6 +47,7 @@ test {
     finalizedBy jacocoTestReport
     // set test properties
     systemProperty 'test.logger', System.getProperty('test.logger', 'true')
+    jvmArgs '--add-modules', 'jdk.incubator.vector'
 }
 
 jacocoTestReport {

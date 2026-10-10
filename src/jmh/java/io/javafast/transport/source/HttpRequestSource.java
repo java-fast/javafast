@@ -1,4 +1,7 @@
-package io.javafast.transport;
+package io.javafast.transport.source;
+
+import io.javafast.transport.TransportBuffer;
+import io.javafast.transport.TransportTestSource;
 
 import java.io.ByteArrayInputStream;
 import java.io.IOException;

@@ -1,5 +1,6 @@
 package io.javafast.transport;
 
+import io.javafast.transport.source.FixedSource;
 import org.openjdk.jmh.annotations.*;
 
 import java.io.IOException;
