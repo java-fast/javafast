@@ -29,9 +29,9 @@ public final class DefaultHttpRequestDispatcher implements RequestDispatcher {
     }
 
     @Override
-    public void dispatch(TransportBuffer.Reader reader) throws Exception {
+    public void dispatch(long sequence, TransportBuffer.Reader reader) throws Exception {
         final RequestContext context = this.pool.get();
-        context.reset(reader, this.appData);
+        context.reset(sequence, reader, this.appData);
         try {
             this.routing.handle(context);
         } catch (Throwable throwable) {

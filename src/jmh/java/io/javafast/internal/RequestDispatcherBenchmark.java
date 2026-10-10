@@ -1,7 +1,7 @@
 package io.javafast.internal;
 
 import io.javafast.config.AppDataManager;
-import io.javafast.transport.HttpRequestSource;
+import io.javafast.transport.source.HttpRequestSource;
 import io.javafast.transport.TransportBuffer;
 import org.openjdk.jmh.annotations.*;
 
@@ -16,6 +16,7 @@ public class RequestDispatcherBenchmark {
     @State(Scope.Thread)
     public static class GetState {
         private final HttpRequestSource request = new HttpRequestSource();
+        private long sequence;
         private TransportBuffer buffer;
         private TransportBuffer.Writer writer;
         private RequestContextPool pool;
@@ -23,6 +24,7 @@ public class RequestDispatcherBenchmark {
 
         @Setup(Level.Trial)
         public void setup() {
+            this.sequence = 0;
             this.buffer = TransportBuffer.create(128, 1);
 
             final DefaultRouting routing = new DefaultRouting();
@@ -35,6 +37,7 @@ public class RequestDispatcherBenchmark {
 
         @TearDown(Level.Trial)
         public void tearDown() {
+            this.sequence = 0;
             this.buffer.close();
         }
     }
@@ -42,6 +45,7 @@ public class RequestDispatcherBenchmark {
     @State(Scope.Thread)
     public static class GetCompositeState {
         private final HttpRequestSource request = new HttpRequestSource();
+        private long sequence;
         private TransportBuffer buffer;
         private TransportBuffer.Writer writer;
         private RequestContextPool pool;
@@ -49,6 +53,7 @@ public class RequestDispatcherBenchmark {
 
         @Setup(Level.Trial)
         public void setup() {
+            this.sequence = 0;
             this.buffer = TransportBuffer.create(128, 1);
 
             final DefaultRouting routing = new DefaultRouting();
@@ -61,6 +66,7 @@ public class RequestDispatcherBenchmark {
 
         @TearDown(Level.Trial)
         public void tearDown() {
+            this.sequence = 0;
             this.buffer.close();
         }
     }
@@ -68,6 +74,7 @@ public class RequestDispatcherBenchmark {
     @State(Scope.Thread)
     public static class PostState {
         private final HttpRequestSource request = new HttpRequestSource();
+        private long sequence;
         private TransportBuffer buffer;
         private TransportBuffer.Writer writer;
         private RequestContextPool pool;
@@ -75,6 +82,7 @@ public class RequestDispatcherBenchmark {
 
         @Setup(Level.Trial)
         public void setup() {
+            this.sequence = 0;
             this.buffer = TransportBuffer.create(256, 1);
 
             final DefaultRouting routing = new DefaultRouting();
@@ -90,25 +98,26 @@ public class RequestDispatcherBenchmark {
 
         @TearDown(Level.Trial)
         public void tearDown() {
+            this.sequence = 0;
             this.buffer.close();
         }
     }
 
     @Benchmark
     public int dispatchGet(GetState state) throws Exception {
-        state.dispatcher.dispatch(state.writer.reader());
+        state.dispatcher.dispatch(state.sequence++, state.writer.reader());
         return state.pool.get().statusCode();
     }
 
     @Benchmark
     public int dispatchGetComposite(GetCompositeState state) throws Exception {
-        state.dispatcher.dispatch(state.writer.reader());
+        state.dispatcher.dispatch(state.sequence++, state.writer.reader());
         return state.pool.get().statusCode();
     }
 
     @Benchmark
     public int dispatchPost(PostState state) throws Exception {
-        state.dispatcher.dispatch(state.writer.reader());
+        state.dispatcher.dispatch(state.sequence++, state.writer.reader());
         return state.pool.get().statusCode();
     }
 

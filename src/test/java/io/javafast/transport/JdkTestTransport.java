@@ -16,6 +16,7 @@ public class JdkTestTransport implements Transport {
     private final TransportBuffer buffer;
     private final RequestDispatcher handler;
     private final HttpTestRequestEncoder encoder = new HttpTestRequestEncoder();
+    private long nextRequestSequence;
 
     private HttpServer server;
     private TransportConfig config;
@@ -40,7 +41,7 @@ public class JdkTestTransport implements Transport {
             TransportBuffer.Writer writer = null;
             try {
                 writer = this.encoder.encode(exchange, this.buffer);
-                this.handler.dispatch(writer.reader());
+                this.handler.dispatch(this.nextRequestSequence++, writer.reader());
             } catch (Exception e) {
                 throw new RuntimeException(e);
             } finally {

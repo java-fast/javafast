@@ -28,6 +28,7 @@ final class RequestContext implements Context {
     // TODO can be singleton!
     private final HttpRequestDecoder decoder = new HttpRequestDecoder();
 
+    private long sequence;
     private TransportBuffer.Reader reader;
     private AppData appData;
 
@@ -76,7 +77,8 @@ final class RequestContext implements Context {
         */
     }
 
-    public void reset(TransportBuffer.Reader reader, AppData appData) {
+    public void reset(long sequence, TransportBuffer.Reader reader, AppData appData) {
+        this.sequence = sequence;
         this.reader = reader;
         this.appData = appData;
         this.method = null;
