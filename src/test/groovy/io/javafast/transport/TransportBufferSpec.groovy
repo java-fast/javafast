@@ -36,6 +36,33 @@ class TransportBufferSpec extends Specification implements TransportUtils {
         buffer.close()
     }
 
+    def 'should write a single block full without a new acquire' () {
+        given:
+        def buffer = TransportBuffer.create(128, 1)
+        def payload = bytes(120) // 120 max. writable space
+        def source = transportSource(payload, [60, 60])
+
+        when:
+        def writer = buffer.writer()
+        def written = writer.read(source)
+        written += writer.read(source)
+
+        then:
+        written == 120
+        readBytes(buffer, writer.head, payload.length) == payload
+        !hasNext(buffer, writer.head)
+        buffer.acquire() == null // cannot acquire, no more blocks left
+
+        when:
+        writer.release()
+
+        then:
+        buffer.freeBlockCount() == 1
+
+        cleanup:
+        buffer.close()
+    }
+
     def 'should chain multiple physical blocks for one logical request'() {
         given:
         def buffer = TransportBuffer.create(64, 8)

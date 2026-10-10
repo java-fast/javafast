@@ -54,6 +54,8 @@ trait TestUtils implements Logger {
 
         @Override
         int read(ByteBuffer dst) throws IOException {
+            if (!dst.hasRemaining())
+                return -1
             dst.put(value.getBytes(StandardCharsets.UTF_8));
             return dst.position();
         }

@@ -1,5 +1,10 @@
 package io.javafast.transport;
 
+import jdk.incubator.vector.ByteVector;
+import jdk.incubator.vector.VectorMask;
+import jdk.incubator.vector.VectorOperators;
+import jdk.incubator.vector.VectorSpecies;
+
 import java.io.IOException;
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
@@ -7,6 +12,7 @@ import java.lang.foreign.ValueLayout;
 import java.lang.invoke.VarHandle;
 import java.nio.BufferOverflowException;
 import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
 import java.nio.channels.ReadableByteChannel;
 import java.nio.charset.StandardCharsets;
 
@@ -268,21 +274,27 @@ public final class TransportBuffer implements AutoCloseable {
             int read = 0;
             while (true) {
                 final ByteBuffer target = this.current.byteBuffer;
+                if (!target.hasRemaining()) {
+                    final Block next = acquire();
+                    if (next == null) {
+                        this.totalWritten += read;
+                        if (read > 0) {
+                            return read;
+                        }
+                        throw new BufferOverflowException();
+                    }
+                    this.current.link(next);
+                    this.current = next;
+                    continue;
+                }
                 final int written = channel.read(target);
                 if (written < 0) {
                     return read == 0 ? -1 : read;
                 }
                 read += written;
-                if (target.hasRemaining()) {
+                if (written == 0 || target.hasRemaining()) {
                     break;
                 }
-                final Block next = acquire();
-                if (next == null) {
-                    this.totalWritten += read;
-                    throw new BufferOverflowException();
-                }
-                this.current.link(next);
-                this.current = next;
             }
             this.totalWritten += read;
             return read;
@@ -313,6 +325,10 @@ public final class TransportBuffer implements AutoCloseable {
     }
 
     public final class Reader {
+
+        private static final VectorSpecies<Byte> SPECIES = ByteVector.SPECIES_PREFERRED;
+        private static final long ONES = 0x0101010101010101L;
+        private static final long HIGHS = 0x8080808080808080L;
 
         private final Block head;
         private Block current;
@@ -453,7 +469,7 @@ public final class TransportBuffer implements AutoCloseable {
                 return value;
             }
 
-            // TODO how to handle native byte order?
+            // TODO handle native byte order?
             // Cross-block
             long value = getUnsignedByte();
             value = (value << 8) | getUnsignedByte();
@@ -550,7 +566,6 @@ public final class TransportBuffer implements AutoCloseable {
         }
 
         /**
-         * TODO after benchmarking, try 8-byte SWAR scanning?
          * Checks if the next characters match the expected string, ignoring the ASCII case.
          */
         public boolean matchesAsciiIgnoreCase(String expected, int ooffset, int len) {
@@ -658,6 +673,78 @@ public final class TransportBuffer implements AutoCloseable {
                         return relativePos + (i - blockOffset);
                     }
                 }
+                relativePos += end - blockOffset;
+                block = block.next();
+                blockOffset = 0;
+            }
+
+            return -1;
+        }
+
+
+        public int indexOfSWAR(byte value) {
+            final long mask = ONES * (value & 0xFFL);
+
+            Block block = this.current;
+            int blockOffset = this.currentOffset;
+            int relativePos = 0;
+
+            while (block != null) {
+                final MemorySegment segment = block.payload();
+                final int end = written(block);
+                int i = blockOffset;
+
+                // Scan 8 bytes at a time
+                for (; i <= end - 24; i += 24) {
+                    final long word1 = segment.get(ValueLayout.JAVA_LONG_UNALIGNED, i);
+                    final long diff1 = word1 ^ mask;
+                    final long found1 = (diff1 - ONES) & ~diff1 & HIGHS;
+                    if (found1 != 0) { // Candidate found: identify the exact byte
+                        return relativePos + (i - blockOffset) + Long.numberOfTrailingZeros(found1) >>> 3;
+                    }
+                }
+
+                // Remaining bytes.
+                for (; i < end; i++) {
+                    if (segment.get(ValueLayout.JAVA_BYTE, i) == value) {
+                        return relativePos + (i - blockOffset);
+                    }
+                }
+
+                relativePos += end - blockOffset;
+                block = block.next();
+                blockOffset = 0;
+            }
+
+            return -1;
+        }
+
+        public int indexOfVector(byte value) {
+            Block block = this.current;
+            int blockOffset = this.currentOffset;
+            int relativePos = 0;
+
+            while (block != null) {
+                final MemorySegment segment = block.payload();
+                final int end = written(block);
+                int i = blockOffset;
+
+                // Process a full vector at a time
+                for (; i <= end - SPECIES.length(); i += SPECIES.length()) {
+                    final ByteVector vector = ByteVector.fromMemorySegment(SPECIES, segment, i, ByteOrder.nativeOrder());
+                    final VectorMask<Byte> matches = vector.compare(VectorOperators.EQ, value);
+                    if (matches.anyTrue()) {
+                        return relativePos + (i - blockOffset) + matches.firstTrue();
+                    }
+                }
+
+                // Scalar tail.
+                for (; i < end; i++) {
+                    if (segment.get(ValueLayout.JAVA_BYTE, i) == value) {
+                        return relativePos + (i - blockOffset);
+                    }
+                }
+
                 relativePos += end - blockOffset;
                 block = block.next();
                 blockOffset = 0;
