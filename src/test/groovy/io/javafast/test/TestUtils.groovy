@@ -44,38 +44,11 @@ trait TestUtils implements Logger {
         if(app != null) app.stop()
     }
 
-    static class StringChannel implements ReadableByteChannel {
-
-        final String value
-
-        StringChannel(String value) {
-            this.value = value
-        }
-
-        @Override
-        int read(ByteBuffer dst) throws IOException {
-            if (!dst.hasRemaining())
-                return -1
-            dst.put(value.getBytes(StandardCharsets.UTF_8));
-            return dst.position();
-        }
-
-        @Override
-        boolean isOpen() {
-            return false
-        }
-
-        @Override
-        void close() throws IOException {
-
-        }
-    }
-
     ByteString byteString(String value) {
         final TransportBuffer buffer = TransportBuffer.create(Math.max(value.length(), 64), 1);
         final TransportBuffer.Writer writer = buffer.writer();
         try {
-            writer.read(new StringChannel(value))
+            writer.read(new TransportBuffer.StringChannel(value))
         } catch (Exception e) {
             e.printStackTrace();
         }
@@ -89,7 +62,7 @@ trait TestUtils implements Logger {
         final TransportBuffer buffer = TransportBuffer.create(Math.max(value.length(), 64), 1);
         final TransportBuffer.Writer writer = buffer.writer();
         try {
-            writer.read(new StringChannel(value))
+            writer.read(new TransportBuffer.StringChannel(value))
         } catch (Exception e) {
             e.printStackTrace();
         }

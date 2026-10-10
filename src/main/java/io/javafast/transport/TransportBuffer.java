@@ -300,6 +300,10 @@ public final class TransportBuffer implements AutoCloseable {
             return read;
         }
 
+        public int read(String value) throws IOException {
+            return read(new StringChannel(value));
+        }
+
         public void release() {
             this.head.release();
         }
@@ -681,44 +685,6 @@ public final class TransportBuffer implements AutoCloseable {
             return -1;
         }
 
-
-        public int indexOfSWAR(byte value) {
-            final long mask = ONES * (value & 0xFFL);
-
-            Block block = this.current;
-            int blockOffset = this.currentOffset;
-            int relativePos = 0;
-
-            while (block != null) {
-                final MemorySegment segment = block.payload();
-                final int end = written(block);
-                int i = blockOffset;
-
-                // Scan 8 bytes at a time
-                for (; i <= end - 24; i += 24) {
-                    final long word1 = segment.get(ValueLayout.JAVA_LONG_UNALIGNED, i);
-                    final long diff1 = word1 ^ mask;
-                    final long found1 = (diff1 - ONES) & ~diff1 & HIGHS;
-                    if (found1 != 0) { // Candidate found: identify the exact byte
-                        return relativePos + (i - blockOffset) + Long.numberOfTrailingZeros(found1) >>> 3;
-                    }
-                }
-
-                // Remaining bytes.
-                for (; i < end; i++) {
-                    if (segment.get(ValueLayout.JAVA_BYTE, i) == value) {
-                        return relativePos + (i - blockOffset);
-                    }
-                }
-
-                relativePos += end - blockOffset;
-                block = block.next();
-                blockOffset = 0;
-            }
-
-            return -1;
-        }
-
         public int indexOfVector(byte value) {
             Block block = this.current;
             int blockOffset = this.currentOffset;
@@ -1031,6 +997,49 @@ public final class TransportBuffer implements AutoCloseable {
             this.current = null;
             this.currentOffset = 0;
             this.position = target;
+        }
+    }
+
+    /**
+     * Mostly for testing and benchmarking, do not use in production
+     *
+     * @param value
+     */
+    private static final class StringChannel implements ReadableByteChannel {
+
+        private final ByteBuffer source;
+
+        private StringChannel(String value) {
+            this.source = ByteBuffer.wrap(value.getBytes(StandardCharsets.UTF_8));
+        }
+
+        @Override
+        public int read(ByteBuffer dst) {
+            if (!this.source.hasRemaining()) {
+                return -1; // EOF
+            }
+
+            if (!dst.hasRemaining()) {
+                return 0; // no space to write
+            }
+
+            final int toWrite = Math.min(dst.remaining(), this.source.remaining());
+            final int oldLimit = this.source.limit();
+            this.source.limit(this.source.position() + toWrite);
+            dst.put(this.source);
+            this.source.limit(oldLimit);
+
+            return toWrite;
+        }
+
+        @Override
+        public boolean isOpen() {
+            return true;
+        }
+
+        @Override
+        public void close() {
+            // no-op
         }
     }
 
