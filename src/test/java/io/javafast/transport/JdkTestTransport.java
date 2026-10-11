@@ -16,7 +16,6 @@ public class JdkTestTransport implements Transport {
     private final TransportBuffer buffer;
     private final RequestDispatcher handler;
     private final HttpTestRequestEncoder encoder = new HttpTestRequestEncoder();
-    private long nextRequestSequence;
 
     private HttpServer server;
     private TransportConfig config;
@@ -41,7 +40,7 @@ public class JdkTestTransport implements Transport {
             TransportBuffer.Writer writer = null;
             try {
                 writer = this.encoder.encode(exchange, this.buffer);
-                this.handler.dispatch(this.nextRequestSequence++, writer.reader());
+                this.handler.dispatch(writer);
             } catch (Exception e) {
                 throw new RuntimeException(e);
             } finally {
@@ -66,5 +65,16 @@ public class JdkTestTransport implements Transport {
         }
         throw new IllegalStateException("Server is not started");
     }
+
+    static void test(int counter) {
+        System.out.println(counter);
+    }
+
+    static void main() {
+        int counter = 0;
+        test(counter++);
+        System.out.println(counter);
+    }
+
 
 }

@@ -28,7 +28,7 @@ final class RequestContext implements Context {
     // TODO can be singleton!
     private final HttpRequestDecoder decoder = new HttpRequestDecoder();
 
-    private long sequence;
+    private TransportBuffer.Writer writer;
     private TransportBuffer.Reader reader;
     private AppData appData;
 
@@ -57,7 +57,7 @@ final class RequestContext implements Context {
         return InputStream.nullInputStream();
     }
 
-    static OutputStream responseBody(TransportBuffer.Reader block) {
+    static OutputStream responseBody(TransportBuffer.Writer writer) {
         // TODO write response body to block or socket?
         return OutputStream.nullOutputStream();
     }
@@ -77,9 +77,9 @@ final class RequestContext implements Context {
         */
     }
 
-    public void reset(long sequence, TransportBuffer.Reader reader, AppData appData) {
-        this.sequence = sequence;
-        this.reader = reader;
+    public void reset(TransportBuffer.Writer writer, AppData appData) {
+        this.writer = writer;
+        this.reader = writer.reader();
         this.appData = appData;
         this.method = null;
         this.queryString = null;
@@ -90,7 +90,7 @@ final class RequestContext implements Context {
         this.resultInputStream = null;
         this.skipRemainingHandlers = false;
 
-        this.decoder.parse(reader);
+        this.decoder.parse(this.reader);
         this.decoder.setTarget(this.path);
     }
 
@@ -397,7 +397,7 @@ final class RequestContext implements Context {
 
     @Override
     public OutputStream outputStream() {
-        return responseBody(this.reader);
+        return responseBody(this.writer);
     }
 
     @Override
@@ -544,7 +544,7 @@ final class RequestContext implements Context {
     }
 
     void writeResponse() throws Exception {
-        if (this.reader == null) {
+        if (this.writer == null) {
             return;
         }
         if (this.headerMap != null) { // write response headers

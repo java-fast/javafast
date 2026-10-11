@@ -328,10 +328,6 @@ public final class TransportBuffer implements AutoCloseable {
             return this.head.reader();
         }
 
-        Block head() {
-            return this.head;
-        }
-
     }
 
     public sealed interface Reader permits ReaderImpl {

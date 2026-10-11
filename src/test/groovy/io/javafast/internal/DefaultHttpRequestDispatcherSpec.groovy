@@ -30,7 +30,7 @@ class DefaultHttpRequestDispatcherSpec extends Specification implements TestUtil
         def writer = this.encoder.encode(exchange, this.buffer)
 
         when:
-        executor.dispatch(0, writer.reader())
+        executor.dispatch(writer)
 
         then:
         verifyAll(requestPool.get()) {
@@ -55,7 +55,7 @@ class DefaultHttpRequestDispatcherSpec extends Specification implements TestUtil
         def writer = this.encoder.encode(exchange, this.buffer)
 
         when:
-        executor.dispatch(0, writer.reader())
+        executor.dispatch(writer)
 
         then:
         verifyAll(requestPool.get()) {
@@ -85,7 +85,7 @@ class DefaultHttpRequestDispatcherSpec extends Specification implements TestUtil
         def writer = this.encoder.encode(exchange, this.buffer)
 
         when:
-        executor.dispatch(0, writer.reader())
+        executor.dispatch(writer)
 
         then:
         verifyAll(requestPool.get()) {

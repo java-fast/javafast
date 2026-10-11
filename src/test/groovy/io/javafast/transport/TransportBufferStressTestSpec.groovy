@@ -200,7 +200,7 @@ class TransportBufferStressTestSpec extends Specification implements TransportUt
                     Thread.sleep(1) // if buffer overflows, then wait and retry
                 }
             }
-            return writer.head()
+            return writer.head
         }
     }
 
