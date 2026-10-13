@@ -1,16 +1,14 @@
 package io.javafast.validation;
 
-import java.util.ArrayList;
-import java.util.LinkedHashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Objects;
+import java.util.*;
+import java.util.function.Predicate;
 import java.util.function.Supplier;
 
 /**
  * Fluent, request-local validator for a single value.
  */
 public class Validator<T> {
+
     static final String TYPE_CONVERSION_FAILED = "TYPE_CONVERSION_FAILED";
     static final String NULLCHECK_FAILED = "NULLCHECK_FAILED";
 
@@ -33,8 +31,7 @@ public class Validator<T> {
         this(fieldName, null, () -> null, typedValue, true);
     }
 
-    private Validator(String fieldName, String stringValue, Supplier<?> valueSupplier,
-                      Object typedValue, boolean hasInitialTypedValue) {
+    private Validator(String fieldName, String stringValue, Supplier<?> valueSupplier, Object typedValue, boolean hasInitialTypedValue) {
         this.fieldName = Objects.requireNonNull(fieldName, "fieldName");
         this.stringValue = stringValue;
         this.valueSupplier = valueSupplier == null ? () -> null : valueSupplier;
@@ -46,18 +43,17 @@ public class Validator<T> {
         return TYPE_CONVERSION_FAILED;
     }
 
-    public Validator<T> check(Check<T> check, String error) {
+    public Validator<T> check(Predicate<T> check, String error) {
         return check(check, new ValidationError<>(error));
     }
 
-    public Validator<T> check(Check<T> check, ValidationError<?> error) {
-        addCheck(fieldName, check, error);
+    public Validator<T> check(Predicate<T> check, ValidationError<?> error) {
+        addCheck(this.fieldName, check, error);
         return this;
     }
 
-    @SuppressWarnings("unchecked")
-    protected final void addCheck(String field, Check<?> check, ValidationError<?> error) {
-        rules.add(new Rule(field, (Check<Object>) check, (ValidationError<Object>) error));
+    protected final void addCheck(String field, Predicate<?> check, ValidationError<?> error) {
+        this.rules.add(new Rule(field, (Predicate<Object>) check, (ValidationError<Object>) error));
     }
 
     /**
@@ -68,59 +64,55 @@ public class Validator<T> {
     }
 
     public boolean hasValue() {
-        if (hasInitialTypedValue) {
-            return initialTypedValue != null;
+        if (this.hasInitialTypedValue) {
+            return this.initialTypedValue != null;
         }
-        return stringValue != null && !stringValue.isEmpty();
+        return this.stringValue != null && !this.stringValue.isEmpty();
     }
 
     public Map<String, List<ValidationError<T>>> errors() {
         evaluate();
-        @SuppressWarnings("unchecked")
-        Map<String, List<ValidationError<T>>> result = (Map<String, List<ValidationError<T>>>) (Map<?, ?>) errors;
-        return result;
+        return (Map<String, List<ValidationError<T>>>) (Map<?, ?>) this.errors;
     }
 
     public T get() {
         evaluate();
-        if (!errors.isEmpty()) {
-            throw new ValidationException(errors);
+        if (!this.errors.isEmpty()) {
+            throw new ValidationException(this.errors);
         }
-        if (typedValue == null) {
-            throw new ValidationException(Map.of(fieldName,
-                List.of(new ValidationError<>(NULLCHECK_FAILED, Map.of(), stringValue, null))));
+        if (this.typedValue == null) {
+            throw new ValidationException(Map.of(this.fieldName, List.of(new ValidationError<>(NULLCHECK_FAILED, Map.of(), this.stringValue, null))));
         }
-        return typedValue;
+        return this.typedValue;
     }
 
     public T getOrNull() {
         evaluate();
-        if (!errors.isEmpty()) {
-            throw new ValidationException(errors);
+        if (!this.errors.isEmpty()) {
+            throw new ValidationException(this.errors);
         }
-        return typedValue;
+        return this.typedValue;
     }
 
     public T getOrDefault(T defaultValue) {
-        T value = getOrNull();
+        final T value = getOrNull();
         return value == null ? defaultValue : value;
     }
 
     public T getOrThrow(java.util.function.Function<Map<String, List<ValidationError<Object>>>, ? extends Exception> exceptionFunction) {
         evaluate();
-        if (!errors.isEmpty()) {
-            throwUnchecked(exceptionFunction.apply(errors));
+        if (!this.errors.isEmpty()) {
+            throwUnchecked(exceptionFunction.apply(this.errors));
         }
-        if (typedValue == null) {
-            throwUnchecked(exceptionFunction.apply(Map.of(fieldName,
-                List.of(new ValidationError<>(NULLCHECK_FAILED, Map.of(), stringValue, null)))));
+        if (this.typedValue == null) {
+            throwUnchecked(exceptionFunction.apply(Map.of(this.fieldName, List.of(new ValidationError<>(NULLCHECK_FAILED, Map.of(), this.stringValue, null)))));
         }
-        return typedValue;
+        return this.typedValue;
     }
 
     @SuppressWarnings("unchecked")
     private static <E extends Exception> void throwUnchecked(E exception) {
-        Validator.<RuntimeException>throwAny(exception);
+        Validator.throwAny(exception);
     }
 
     @SuppressWarnings("unchecked")
@@ -129,32 +121,32 @@ public class Validator<T> {
     }
 
     private void evaluate() {
-        if (evaluated) {
+        if (this.evaluated) {
             return;
         }
-        evaluated = true;
+        this.evaluated = true;
 
         try {
             @SuppressWarnings("unchecked")
-            T value = (T) (hasInitialTypedValue ? initialTypedValue : valueSupplier.get());
-            typedValue = value;
+            final T value = (T) (this.hasInitialTypedValue ? this.initialTypedValue : this.valueSupplier.get());
+            this.typedValue = value;
         } catch (Exception e) {
-            errors = Map.of(fieldName, List.of(
-                new ValidationError<>(conversionErrorMessage(), Map.of(), stringValue, e)));
+            this.errors = Map.of(this.fieldName, List.of(new ValidationError<>(conversionErrorMessage(), Map.of(), this.stringValue, e)));
             return;
         }
 
-        Map<String, List<ValidationError<Object>>> failed = new LinkedHashMap<>();
-        for (Rule rule : rules) {
-            if (!rule.check().test(typedValue)) {
-                rule.error().value(typedValue);
+        final var failed = new LinkedHashMap<String, List<ValidationError<Object>>>();
+        for (Rule rule : this.rules) {
+            if (!rule.check().test(this.typedValue)) {
+                rule.error().value(this.typedValue);
                 failed.computeIfAbsent(rule.fieldName(), ignored -> new ArrayList<>()).add(rule.error());
             }
         }
         failed.replaceAll((key, value) -> List.copyOf(value));
-        errors = Map.copyOf(failed);
+        this.errors = Map.copyOf(failed);
     }
 
-    record Rule(String fieldName, Check<Object> check, ValidationError<Object> error) {
+    record Rule(String fieldName, Predicate<Object> check, ValidationError<Object> error) {
     }
+
 }

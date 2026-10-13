@@ -4,6 +4,7 @@ import java.util.List;
 import java.util.Map;
 
 public class ValidationException extends RuntimeException {
+
     private final Map<String, List<ValidationError<Object>>> errors;
 
     public ValidationException(Map<String, List<ValidationError<Object>>> errors) {
@@ -12,6 +13,7 @@ public class ValidationException extends RuntimeException {
     }
 
     public Map<String, List<ValidationError<Object>>> errors() {
-        return errors;
+        return this.errors;
     }
+
 }

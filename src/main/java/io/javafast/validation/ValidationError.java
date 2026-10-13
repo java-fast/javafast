@@ -3,6 +3,7 @@ package io.javafast.validation;
 import java.util.Map;
 
 public final class ValidationError<T> {
+
     private final String message;
     private final Map<String, Object> args;
     private Object value;
@@ -24,20 +25,19 @@ public final class ValidationError<T> {
     }
 
     public String message() {
-        return message;
+        return this.message;
     }
 
     public Map<String, Object> args() {
-        return args;
+        return this.args;
     }
 
-    @SuppressWarnings("unchecked")
     public T value() {
-        return (T) value;
+        return (T) this.value;
     }
 
     public Exception exception() {
-        return exception;
+        return this.exception;
     }
 
     void value(Object value) {

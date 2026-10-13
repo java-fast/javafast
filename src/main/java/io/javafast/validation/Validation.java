@@ -18,7 +18,7 @@ public final class Validation {
     }
 
     public <T> Validation register(Class<T> clazz, Function<String, ? extends T> converter) {
-        converters.put(clazz, converter);
+        this.converters.put(clazz, converter);
         return this;
     }
 
@@ -34,12 +34,11 @@ public final class Validation {
     }
 
     public static Map<String, List<ValidationError<?>>> collectErrors(Validator<?>... validators) {
-        List<Validator<?>> list = List.of(validators);
-        return collectErrors(list);
+        return collectErrors(List.of(validators));
     }
 
     public static Map<String, List<ValidationError<?>>> collectErrors(Iterable<? extends Validator<?>> validators) {
-        Map<String, List<ValidationError<?>>> result = new HashMap<>();
+        final Map<String, List<ValidationError<?>>> result = new HashMap<>();
         for (Validator<?> validator : validators) {
             validator.errors().forEach((field, errors) ->
                 result.computeIfAbsent(field, ignored -> new ArrayList<>()).addAll(errors));
@@ -49,7 +48,7 @@ public final class Validation {
     }
 
     private boolean supportsClass(Class<?> clazz) {
-        return converters.containsKey(clazz) || clazz.isEnum();
+        return this.converters.containsKey(clazz) || clazz.isEnum();
     }
 
     @SuppressWarnings({"unchecked", "rawtypes"})
@@ -57,7 +56,7 @@ public final class Validation {
         if (clazz.isEnum()) {
             return (T) Enum.valueOf((Class<? extends Enum>) clazz, value);
         }
-        Function<String, ?> converter = converters.get(clazz);
+        final Function<String, ?> converter = this.converters.get(clazz);
         if (converter == null) {
             throw new MissingConverterException(clazz.getName());
         }

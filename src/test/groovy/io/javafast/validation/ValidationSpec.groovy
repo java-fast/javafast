@@ -129,7 +129,7 @@ class ValidationSpec extends Specification {
 
     def "should use deserialization failure for body validator"() {
         given:
-        def validator = new BodyValidator<Object>("{}", Object, {
+        def validator = new BodyValidator<Object>("{}", {
             throw new IllegalArgumentException("bad json")
         })
 
@@ -145,7 +145,7 @@ class ValidationSpec extends Specification {
 
     def "should validate named fields on body validator"() {
         given:
-        def validator = new BodyValidator<User>("body", User, { new User("bob") })
+        def validator = new BodyValidator<User>("body", { new User("bob") })
             .check("username", { user -> user.name.length() >= 3 }, "Username too short")
 
         expect:
