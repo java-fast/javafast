@@ -36,6 +36,16 @@ trait TransportUtils {
         bytes
     }
 
+    byte[] readAll(TransportBuffer.Writer writer) {
+        def reader = writer.reader()
+        reader.reset()
+        byte[] result = new byte[reader.limit()]
+        for (int i = 0; i < result.length; i++) {
+            result[i] = reader.getAt(i)
+        }
+        return result
+    }
+
     boolean hasNext(TransportBuffer buffer, TransportBuffer.Block block) {
         buffer.getNext(block.index) != TransportBuffer.NEXT_NONE
     }

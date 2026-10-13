@@ -14,7 +14,9 @@ import java.nio.BufferOverflowException;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.channels.ReadableByteChannel;
+import java.nio.channels.WritableByteChannel;
 import java.nio.charset.StandardCharsets;
+import java.util.Objects;
 
 /**
  * Fixed-size block ring buffer for transport/request execution.
@@ -259,10 +261,11 @@ public final class TransportBuffer implements AutoCloseable {
 
         private Block head;
         private Block current;
+        private int currentWritten;
 
         /**
          * Logical position within the request.
-         * Request size is bounded by MAX_REQUEST_SIZE, therefore an int is enough.
+         * Request size is bounded by MAX_REQUEST_SIZE. Therefore, an int is enough.
          */
         private int totalWritten;
 
@@ -283,6 +286,7 @@ public final class TransportBuffer implements AutoCloseable {
                 if (!target.hasRemaining()) {
                     final Block next = acquire();
                     if (next == null) {
+                        this.currentWritten += read;
                         this.totalWritten += read;
                         if (read > 0) {
                             return read;
@@ -291,6 +295,7 @@ public final class TransportBuffer implements AutoCloseable {
                     }
                     this.current.link(next);
                     this.current = next;
+                    this.currentWritten = 0;
                     continue;
                 }
                 final int written = channel.read(target);
@@ -302,6 +307,7 @@ public final class TransportBuffer implements AutoCloseable {
                     break;
                 }
             }
+            this.currentWritten += read;
             this.totalWritten += read;
             return read;
         }
@@ -310,14 +316,41 @@ public final class TransportBuffer implements AutoCloseable {
             return read(new StringChannel(value));
         }
 
+        /**
+         * this.head must not be null!
+         * Use this method only after this.read(ReadableByteChannel channel)
+         */
+        public void writeByte(int value) {
+            ensureHead();
+            ensureWritableBlock();
+            this.current.payload.set(ValueLayout.JAVA_BYTE, this.currentWritten++, (byte) value);
+            this.totalWritten++;
+        }
+
+        public void writeBytes(byte[] bytes, int offset, int length) {
+            Objects.checkFromIndexSize(offset, length, bytes.length);
+            ensureHead();
+            int sourceOffset = offset;
+            int remaining = length;
+            while (remaining > 0) {
+                ensureWritableBlock();
+                final int count = Math.min(remaining, payloadSize - this.currentWritten);
+                MemorySegment.copy(bytes, sourceOffset, this.current.payload, ValueLayout.JAVA_BYTE, this.currentWritten, count);
+                sourceOffset += count;
+                remaining -= count;
+                this.currentWritten += count;
+                this.totalWritten += count;
+            }
+        }
+
         public void release() {
             this.head.release();
         }
 
         public void reset() {
-            // block-confined writer reset
             this.current = null;
             this.totalWritten = 0;
+            this.currentWritten = 0;
         }
 
         public int totalWritten() {
@@ -328,9 +361,37 @@ public final class TransportBuffer implements AutoCloseable {
             return this.head.reader();
         }
 
+        private void ensureHead() {
+            if (this.head == null) {
+                throw new IllegalStateException("head must not be null!");
+            }
+            if (this.current == null) {
+                this.current = this.head;
+                this.currentWritten = 0;
+                this.totalWritten = 0;
+            }
+        }
+
+        private void ensureWritableBlock() {
+            final int remaining = payloadSize - this.currentWritten;
+            if (remaining > 0) {
+                return;
+            }
+            Block next = this.current.next();
+            if (next == null) {
+                next = acquire();
+                if (next == null) {
+                    throw new BufferOverflowException();
+                }
+                this.current.link(next);
+            }
+            this.current = next;
+            this.currentWritten = 0;
+        }
     }
 
     public sealed interface Reader permits ReaderImpl {
+
         int position();
 
         Reader position(int position);
@@ -447,6 +508,17 @@ public final class TransportBuffer implements AutoCloseable {
 
         void copyTo(int offset, byte[] destination, int destinationOffset, int length);
 
+        /**
+         * Writes the remaining data to the given channel
+         *
+         * @param channel the channel to write to
+         * @return the number of bytes written
+         * @throws IOException if an I/O error occurs
+         */
+        int write(WritableByteChannel channel) throws IOException;
+
+        void close();
+
     }
 
     public sealed class ReaderImpl implements Reader permits VectorizedReader {
@@ -480,7 +552,7 @@ public final class TransportBuffer implements AutoCloseable {
 
         @Override
         public int written(Block block) {
-            return block.byteBuffer.position();
+            return block == this.head.writer.current ? this.head.writer.currentWritten : payloadSize;
         }
 
         @Override
@@ -884,6 +956,37 @@ public final class TransportBuffer implements AutoCloseable {
                     blockOffset = 0;
                 }
             }
+        }
+
+        @Override
+        public int write(WritableByteChannel channel) throws IOException {
+            int remaining = remaining();
+            int totalWritten = 0;
+            while (this.current != null && remaining > 0) {
+                final int available = written(this.current) - this.currentOffset;
+                if (available == 0) {
+                    this.current = this.current.next();
+                    this.currentOffset = 0;
+                    continue;
+                }
+                final int count = Math.min(available, remaining);
+                final ByteBuffer source = this.current.byteBuffer;
+                final int written = channel.write(
+                    source.position(this.currentOffset).limit(this.currentOffset + count)
+                );
+                if (written == 0) {
+                    break;
+                }
+                remaining -= written;
+                totalWritten += written;
+                this.currentOffset += written;
+            }
+            return totalWritten;
+        }
+
+        @Override
+        public void close() {
+            this.head.release();
         }
 
         // -------------------------------------------------------------------------
