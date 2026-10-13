@@ -7,11 +7,12 @@ import java.nio.ByteOrder;
 
 /**
  * HTTP 1.1 Request Decoder
+ * TODO throw malformed when there is no Host header!
  */
 public class HttpRequestDecoder {
 
     private static final int MAX_HEADER_COUNT = Integer.getInteger("javafast.max.header.count", 64);
-    private static final int MAX_REQUEST_SIZE = Integer.getInteger("javafast.max.request.size", 10 * (1 << 20)); // aka 10MB
+    // TODO already checked in ProtocolHandler, do we need to check again?
     private static final int MAX_BODY_SIZE = Integer.getInteger("javafast.max.request.body.size", 1 << 23); // aka 8MB
 
     private static final boolean LITTLE_ENDIAN = ByteOrder.nativeOrder() == ByteOrder.LITTLE_ENDIAN;
@@ -26,6 +27,7 @@ public class HttpRequestDecoder {
     private static final long OPTIONS = LITTLE_ENDIAN ? 0x00534E4F4954504FL : 0x4F5054494F4E5300L;
     private static final long CONNECT = LITTLE_ENDIAN ? 0x005443454E4E4F43L : 0x434F4E4E45435400L;
 
+    private static final byte[] EMPTY_ARRAY = new byte[0];
     private static final byte CR = '\r';
     private static final byte LF = '\n';
     private static final byte SPACE = ' ';
@@ -93,11 +95,12 @@ public class HttpRequestDecoder {
 
     private int headersStart;
     private int headersLength;
+    private int headersCount;
 
     private int bodyStart;
     private int bodyLength;
 
-    private long contentLength;
+    private int contentLength; // due to MAX_REQUEST_SIZE check int is enough
     private boolean chunked;
 
     public void parse(TransportBuffer.Reader reader) {
@@ -110,9 +113,10 @@ public class HttpRequestDecoder {
         this.targetLength = 0;
         this.headersStart = -1;
         this.headersLength = 0;
+        this.headersCount = 0;
         this.bodyStart = -1;
         this.bodyLength = 0;
-        this.contentLength = 0L;
+        this.contentLength = 0;
         this.chunked = false;
 
         if (!reader.hasRemaining()) {
@@ -205,6 +209,7 @@ public class HttpRequestDecoder {
             }
 
             addHeader(headerCount++ << 2, nameStart, nameLength, valueStart, valueLength);
+            this.headersCount = headerCount;
         }
     }
 
@@ -243,7 +248,7 @@ public class HttpRequestDecoder {
 
     private int parseContentLength() {
         int digits = 0;
-        long value = 0;
+        int value = 0;
         final int valueLength = this.reader.indexOf(CR, LF);
         for (int i = 0; i < valueLength; i++) {
             final int c = this.reader.getUnsignedByte();
@@ -300,12 +305,12 @@ public class HttpRequestDecoder {
             throw HttpRequestException.REQUEST_TOO_LARGE;
         }
         this.bodyStart = this.reader.position();
-        this.bodyLength = (int) this.contentLength;
+        this.bodyLength = this.contentLength;
         this.reader.skip(this.bodyLength);
     }
 
     private void parseChunkedBody() {
-        // TODO
+        // TODO not implement yet!
     }
 
     public HttpMethod getMethod() {
@@ -319,8 +324,20 @@ public class HttpRequestDecoder {
         return this.reader.getAscii(this.targetStart, this.targetLength);
     }
 
-    public void setTarget(ByteString target) {
+    /**
+     * Fills the target path into ByteString
+     */
+    public void getTarget(ByteString target) {
         target.reset(this.reader, this.targetStart, this.targetLength);
+    }
+
+    public int getHeadersCount() {
+        return this.headersCount;
+    }
+
+    public boolean matchHeaderName(int index, String name) {
+        final int offset = index << 2;
+        return this.reader.matchesAsciiIgnoreCase(name, this.headers[offset], this.headers[offset + 1]);
     }
 
     public String getHeaderName(int index) {
@@ -333,7 +350,20 @@ public class HttpRequestDecoder {
         return this.reader.getAscii(this.headers[offset + 2], this.headers[offset + 3]);
     }
 
-    public String getBody() {
+    public int getContentLength() {
+        return this.contentLength;
+    }
+
+    public byte[] getBody() {
+        if (this.bodyLength == 0) {
+            return EMPTY_ARRAY;
+        }
+        final byte[] result = new byte[this.bodyLength];
+        this.reader.copyTo(this.bodyStart, result, 0, this.bodyLength);
+        return result;
+    }
+
+    public String getBodyAsString() {
         if (this.bodyLength == 0) {
             return "";
         }

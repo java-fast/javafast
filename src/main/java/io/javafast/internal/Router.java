@@ -26,7 +26,7 @@ final class Router {
     }
 
     void handle(Context ctx) throws Exception {
-        final ByteString path = ((RequestContext) ctx).path;
+        final ByteString path = ((RequestContext) ctx).target;
         this.registry.findAll(this.routerState, HandlerPhase.BEFORE, path, m -> {
             m.route().handler().handle(ctx);
             throwIfHandlersSkipped(ctx);
@@ -61,7 +61,7 @@ final class Router {
     }
 
     void handleAfter(Context ctx) throws Exception {
-        final ByteString path = ((RequestContext) ctx).path;
+        final ByteString path = ((RequestContext) ctx).target;
         this.registry.findAll(this.routerState, HandlerPhase.AFTER, path, m -> {
             m.route().handler().handle(ctx);
             throwIfHandlersSkipped(ctx);

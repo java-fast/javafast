@@ -9,11 +9,13 @@ import java.util.Objects;
 
 final class TransportBufferOutputStream extends OutputStream {
 
-    private final TransportBuffer.Writer writer;
+    private TransportBuffer.Writer writer;
     private boolean closed;
 
-    TransportBufferOutputStream(TransportBuffer.Writer writer) {
-        this.writer = Objects.requireNonNull(writer, "writer");
+    public void reset(TransportBuffer.Writer writer) {
+        this.writer = writer;
+        this.writer.reset();
+        this.closed = false;
     }
 
     @Override

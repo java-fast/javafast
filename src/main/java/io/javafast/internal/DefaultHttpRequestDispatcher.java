@@ -31,8 +31,8 @@ public final class DefaultHttpRequestDispatcher implements RequestDispatcher {
     @Override
     public void dispatch(TransportBuffer.Writer writer) throws Exception {
         final RequestContext context = this.pool.get();
-        context.reset(writer, this.appData);
         try {
+            context.reset(writer, this.appData, this.routing.contextPath); // to handle HttpRequestException
             this.routing.handle(context);
         } catch (Throwable throwable) {
             if (!this.routing.handleException(context, throwable)) {

@@ -9,6 +9,7 @@ import java.util.function.Function;
  * Transport-independent metadata and content for an uploaded multipart file.
  */
 public final class UploadedFile {
+
     private final InputStream content;
     private final String contentType;
     private final String filename;
@@ -22,28 +23,28 @@ public final class UploadedFile {
     }
 
     public InputStream content() {
-        return content;
+        return this.content;
     }
 
     public String contentType() {
-        return contentType;
+        return this.contentType;
     }
 
     public String filename() {
-        return filename;
+        return this.filename;
     }
 
     public long size() {
-        return size;
+        return this.size;
     }
 
     public String extension() {
-        int dot = filename.lastIndexOf('.');
-        return dot >= 0 ? filename.substring(dot) : filename;
+        final int dot = this.filename.lastIndexOf('.');
+        return dot >= 0 ? this.filename.substring(dot) : this.filename;
     }
 
     public <T> T contentAndClose(Function<InputStream, T> callback) throws IOException {
-        try (InputStream input = content) {
+        try (final InputStream input = this.content) {
             return callback.apply(input);
         }
     }

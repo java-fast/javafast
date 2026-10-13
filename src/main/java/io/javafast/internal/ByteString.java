@@ -79,6 +79,21 @@ public final class ByteString {
         return this.reader.matchesAscii(ascii, ooffset, len);
     }
 
+    public int indexOf(char c) {
+        if (this.length <= this.bytes.length) { // for small strings, compare bytes directly
+            for (int i = 0; i < this.length; i++) {
+                final byte actual = this.bytes[i];
+                final byte expected = (byte) c;
+                if (actual == expected) {
+                    return i;
+                }
+            }
+            return -1;
+        }
+        this.reader.position(this.position);
+        return this.reader.indexOf((byte) c);
+    }
+
     public String substring(int beginIndex, int endIndex) {
         checkRange(beginIndex, endIndex);
         if (this.length <= this.bytes.length) {
@@ -137,5 +152,4 @@ public final class ByteString {
             throw new StringIndexOutOfBoundsException("begin " + beginIndex + ", end " + endIndex);
         }
     }
-
 }

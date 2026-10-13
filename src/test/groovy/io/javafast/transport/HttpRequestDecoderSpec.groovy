@@ -30,7 +30,7 @@ class HttpRequestDecoderSpec extends Specification implements TestUtils {
         decoder.getHeaderName(1) == 'X-test'
         decoder.getHeader(0) == '0'
         decoder.getHeader(1) == 'abc'
-        decoder.getBody() == ''
+        decoder.getBodyAsString() == ''
 
         cleanup:
         block.release()
@@ -59,7 +59,7 @@ class HttpRequestDecoderSpec extends Specification implements TestUtils {
         !decoder.chunked
         decoder.getHeaderName(0) == 'Content-length'
         decoder.getHeader(0) == '128'
-        decoder.getBody() == 'b' + 'o'.repeat(127)
+        decoder.getBodyAsString() == 'b' + 'o'.repeat(127)
 
         cleanup:
         block.release()

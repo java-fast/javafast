@@ -3,6 +3,7 @@ package io.javafast.http;
 import java.util.Map;
 
 /**
+ * TODO also design with no stacktrace?
  * Exception used by handlers to terminate processing with a specific HTTP response.
  */
 public class HttpResponseException extends RuntimeException {
@@ -21,7 +22,7 @@ public class HttpResponseException extends RuntimeException {
     public HttpResponseException(HttpStatus status, String message, Map<String, String> details) {
         super(message);
         this.status = status;
-        this.details = Map.copyOf(details);
+        this.details = Map.copyOf(details); // TODO why do we need to copy the map?
     }
 
     public HttpStatus status() {

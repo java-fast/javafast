@@ -107,7 +107,7 @@ final class ResponseBuffer {
         }
         final ResponseSlot slot = this.slots[index(this.nextWriteSequence)];
         if (slot.sequence != this.nextWriteSequence || slot.state != SlotState.READY) {
-            return null;
+            return null; // Slot is not ready for writing
         }
         slot.state = SlotState.WRITING;
         return slot;

@@ -13,10 +13,7 @@ import java.io.*;
 import java.lang.reflect.Type;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Objects;
+import java.util.*;
 import java.util.function.Function;
 import java.util.stream.Stream;
 
@@ -30,73 +27,92 @@ final class RequestContext implements Context {
 
     private TransportBuffer.Writer writer;
     private TransportBuffer.Reader reader;
+
+    private boolean writingResponse;
+    private boolean skipRemainingHandlers;
+
     private AppData appData;
-
-    private HttpMethod method;
-    final ByteString path = new ByteString(32);
-
-    private String queryString;
-
     private String contextPath;
+
+    final ByteString target = new ByteString(32);
+    private HttpMethod method;
+    private String path;
+    private String queryString;
     private PathParams pathParamMap;
-    private Map<String, String> headerMap;
+    private Map<String, String> requestHeaders;
 
     private int statusCode = HttpStatus.OK.code();
-    private String result;
-    private InputStream resultInputStream;
+    private Map<String, String> responseHeaders;
+    private String responseBody;
+    private InputStream responseBodyInputStream;
 
-    private boolean skipRemainingHandlers = false;
+    // line + headers + body
+    private final TransportBufferOutputStream responseOutputStream = new TransportBufferOutputStream();
 
-    static String header(TransportBuffer.Reader block, String header) {
-        // TODO read header from block
-        return "";
-    }
-
-    static InputStream requestBody(TransportBuffer.Reader block) {
-        // TODO read request body from block
-        return InputStream.nullInputStream();
-    }
-
-    static OutputStream responseBody(TransportBuffer.Writer writer) {
-        // TODO write response body to block or socket?
-        return OutputStream.nullOutputStream();
-    }
-
-    RequestContext() {
-        // this.method = HttpMethod.of(exchange.method());
-        /*
-        final String uri = exchange.uri();
-        final int queryIndex = uri.indexOf('?');
-        if (queryIndex >= 0) {
-            this.path = uri.substring(0, queryIndex);
-            this.queryString = uri.substring(queryIndex + 1);
-        } else {
-            this.path = uri;
-            this.queryString = "";
+    private void ensureRequestReadable() {
+        if (this.writingResponse) {
+            throw RequestConsumedException.get();
         }
-        */
     }
 
-    public void reset(TransportBuffer.Writer writer, AppData appData) {
+    private String lookupHeader(String header) {
+        final int count = this.decoder.getHeadersCount();
+        if (count == 0) return null;
+        for (int i = 0; i < count; i++) {
+            if (this.decoder.matchHeaderName(i, header)) {
+                if (this.requestHeaders != null) {
+                    this.requestHeaders = new HashMap<>();
+                }
+                final String value = this.decoder.getHeader(i);
+                this.requestHeaders.put(header, value);
+                return value;
+            }
+        }
+        return null;
+    }
+
+    private Map<String, String> getHeaders() {
+        final int count = this.decoder.getHeadersCount();
+        if (count == 0) return Collections.emptyMap();
+        ensureRequestReadable();
+        if (this.requestHeaders == null) {
+            this.requestHeaders = new HashMap<>();
+        }
+        this.requestHeaders.clear();
+        for (int i = 0; i < count; i++) {
+            final String name = this.decoder.getHeaderName(i);
+            final String value = this.decoder.getHeader(i);
+            this.requestHeaders.put(name, value);
+        }
+        return this.requestHeaders;
+    }
+
+    void reset(TransportBuffer.Writer writer, AppData appData, String contextPath) {
         this.writer = writer;
         this.reader = writer.reader();
         this.appData = appData;
-        this.method = null;
-        this.queryString = null;
-        this.contextPath = null;
-        this.pathParamMap = null;
-        this.headerMap = null;
-        this.result = null;
-        this.resultInputStream = null;
+        this.contextPath = contextPath;
+
+        this.writingResponse = false;
         this.skipRemainingHandlers = false;
 
+        this.method = null;
+        this.path = null;
+        this.queryString = null;
+        this.pathParamMap = null;
+        this.requestHeaders = null;
+        this.responseBody = null;
+        this.responseBodyInputStream = null;
+        this.responseHeaders = null;
+
+        this.reader.reset();
         this.decoder.parse(this.reader);
-        this.decoder.setTarget(this.path);
+        this.decoder.getTarget(this.target);
     }
 
     @Override
     public int contentLength() {
-        return 0;
+        return this.decoder.getContentLength();
     }
 
     @Override
@@ -114,7 +130,15 @@ final class RequestContext implements Context {
 
     @Override
     public String path() {
-        return this.path.toString();
+        if (this.path == null) {
+            final int index = this.target.indexOf('?');
+            if (index == -1) {
+                this.path = this.target.toString();
+            } else {
+                this.path = this.target.substring(0, index);
+            }
+        }
+        return this.path;
     }
 
     @Override
@@ -144,12 +168,14 @@ final class RequestContext implements Context {
 
     @Override
     public String url() {
-        return "";
+        // TODO optimize
+        return "http://" + header("Host") + "/" + path();
     }
 
     @Override
     public String fullUrl() {
-        return "";
+        // TODO optimize
+        return "http://" + header("Host") + "/" + path() + "?" + queryString();
     }
 
     @Override
@@ -169,6 +195,14 @@ final class RequestContext implements Context {
 
     @Override
     public String queryString() {
+        if (this.queryString == null) {
+            final int index = this.target.indexOf('?');
+            if (index == -1) {
+                this.queryString = "";
+            } else {
+                this.queryString = this.target.substring(index + 1, this.target.length());
+            }
+        }
         return this.queryString;
     }
 
@@ -189,36 +223,41 @@ final class RequestContext implements Context {
 
     @Override
     public String body() {
-        return new String(bodyAsBytes(), StandardCharsets.UTF_8);
+        ensureRequestReadable();
+        return this.decoder.getBodyAsString();
     }
 
     @Override
     public byte[] bodyAsBytes() {
-        // TODO optimize later via reusing a buffer byte[]
-        try (final var in = requestBody(this.reader)){
-            return in.readAllBytes();
-        } catch (IOException e) {
-            throw new UncheckedIOException(e);
-        }
+        ensureRequestReadable();
+        return this.decoder.getBody();
     }
 
     @Override
     public <T> T bodyAsClass(Type type) {
+        ensureRequestReadable();
+        // TODO json mapping to the type
         return null;
     }
 
     @Override
     public <T> T bodyAsClass(Class<T> type) {
+        ensureRequestReadable();
+        // TODO json mapping to the type
         return null;
     }
 
     @Override
     public <T> T bodyStreamAsClass(Type type) {
+        ensureRequestReadable();
+        // TODO how?
         return null;
     }
 
     @Override
     public InputStream bodyInputStream() {
+        ensureRequestReadable();
+        // TODO TransportBufferInputStream?
         return null;
     }
 
@@ -318,21 +357,33 @@ final class RequestContext implements Context {
     }
 
     @Override
-    public String header(String name) {
-        if (this.headerMap != null && this.headerMap.containsKey(name)) {
-            return this.headerMap.get(name);
+    public String header(int index) {
+        if (index >= this.decoder.getHeadersCount()) {
+            return null;
         }
-        return header(this.reader, name);
+        ensureRequestReadable();
+        return this.decoder.getHeader(index);
+    }
+
+    @Override
+    public String header(String name) {
+        if (this.requestHeaders != null && this.requestHeaders.containsKey(name)) {
+            return this.requestHeaders.get(name);
+        }
+        ensureRequestReadable();
+        return lookupHeader(name);
     }
 
     @Override
     public <T> Validator<T> headerAsClass(String name, Class<T> type) {
+        ensureRequestReadable();
+        // TODO json mapping to the type
         return null;
     }
 
     @Override
     public Map<String, String> headerMap() {
-        return this.headerMap;
+        return Map.copyOf(getHeaders()); // copy protection
     }
 
     @Override
@@ -397,68 +448,75 @@ final class RequestContext implements Context {
 
     @Override
     public OutputStream outputStream() {
-        return responseBody(this.writer);
+        this.writingResponse = true;
+        // TODO calculate line + headers offset
+        // TODO return the body slice of TransportBufferOutputStream
+        return null;
     }
 
     @Override
     public Context result(String value) {
-        this.result = value;
-        this.resultInputStream = new ByteArrayInputStream(value.getBytes(StandardCharsets.UTF_8));
+        this.responseBody = value;
+        this.responseBodyInputStream = new ByteArrayInputStream(value.getBytes(StandardCharsets.UTF_8));
         return this;
     }
 
     @Override
     public Context result(byte[] bytes) {
-        this.result = new String(bytes, StandardCharsets.UTF_8);
-        this.resultInputStream = new ByteArrayInputStream(bytes);
+        this.responseBody = null;
+        this.responseBodyInputStream = new ByteArrayInputStream(bytes);
         return this;
     }
 
     @Override
     public Context result(InputStream stream) {
-        this.resultInputStream = stream;
-        this.result = "";
+        this.responseBody = null;
+        this.responseBodyInputStream = stream;
         return this;
     }
 
     @Override
     public String result() {
-        return this.result;
+        return this.responseBody;
     }
 
     @Override
     public InputStream resultInputStream() {
-        return Objects.requireNonNullElseGet(this.resultInputStream, () -> new ByteArrayInputStream(new byte[0]));
+        return Objects.requireNonNullElseGet(this.responseBodyInputStream, InputStream::nullInputStream);
     }
 
     @Override
     public Context contentType(String contentType) {
+        if (this.responseHeaders == null) {
+            this.responseHeaders = new HashMap<>();
+        }
+        this.responseHeaders.put("Content-Type", contentType);
         return null;
     }
 
     @Override
     public Context header(String name, String value) {
-        if (this.headerMap == null) {
-            this.headerMap = new HashMap<>();
+        if (this.responseHeaders == null) {
+            this.responseHeaders = new HashMap<>();
         }
-        this.headerMap.put(name, value);
+        this.responseHeaders.put(name, value);
         return this;
     }
 
     @Override
     public Context addHeader(String name, String value) {
-        // TODO multi-value headers?
-        if (this.headerMap == null) {
-            this.headerMap = new HashMap<>();
+        // TODO handle multi-value headers?
+        if (this.responseHeaders == null) {
+            this.responseHeaders = new HashMap<>();
         }
-        this.headerMap.put(name, value);
+        this.responseHeaders.put(name, value);
         return this;
     }
 
     @Override
     public Context removeHeader(String name) {
-        if (this.headerMap != null) {
-            this.headerMap.remove(name);
+        if (this.responseHeaders != null) {
+            this.responseHeaders.remove(name);
         }
         return this;
     }
@@ -535,10 +593,6 @@ final class RequestContext implements Context {
         return this.skipRemainingHandlers;
     }
 
-    void setContextPath(String contextPath) {
-        this.contextPath = contextPath;
-    }
-
     void setPathParamMap(PathParams pathParamMap) {
         this.pathParamMap = pathParamMap;
     }
@@ -547,17 +601,24 @@ final class RequestContext implements Context {
         if (this.writer == null) {
             return;
         }
-        if (this.headerMap != null) { // write response headers
-            // TODO write headers to response
+        this.writingResponse = true;
+        this.responseOutputStream.reset(this.writer);
+        // TODO write response line
+        // TODO write status code
+        if (this.responseHeaders != null) { // write response headers
+            // TODO write response headers to response
         }
-        // this.exchange.status(this.statusCode);
-        if(this.method == HttpMethod.HEAD) {
+
+        if (this.method == HttpMethod.HEAD) {
             return; // no body for HEAD
         }
-//        final var stream = resultInputStream();
-//        try (stream; final var out = responseBody(this.reader)) {
-//            stream.transferTo(out);
-//        }
+
+        final var stream = resultInputStream();
+        if (stream != null) {
+            try (stream; final var out = this.responseOutputStream) {
+                stream.transferTo(out);
+            }
+        }
     }
 
 }

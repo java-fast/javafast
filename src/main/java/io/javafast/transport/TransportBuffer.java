@@ -994,9 +994,6 @@ public final class TransportBuffer implements AutoCloseable {
         // -------------------------------------------------------------------------
 
         private byte[] getBytes(int offset, int length) {
-            if (length < 0) {
-                throw new IllegalArgumentException("length < 0");
-            }
             final byte[] result = new byte[length];
             copyTo(offset, result, 0, length);
             return result;

@@ -110,6 +110,12 @@ public interface Context {
     Map<String, Object> attributeMap();
 
     // Headers / cookies
+
+    /**
+     * Get header value by index, usually faster than header(String)
+     */
+    String header(int index);
+
     String header(String name);
 
     <T> Validator<T> headerAsClass(String name, Class<T> type);
