@@ -24,6 +24,10 @@ public final class ByteString {
         this.bytes = new byte[bufferSize];
     }
 
+    public void clear() {
+        this.length = 0;
+    }
+
     public void reset(TransportBuffer.Reader reader, int position, int length) {
         this.reader = reader;
         this.position = position;

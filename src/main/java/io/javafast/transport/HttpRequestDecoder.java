@@ -2,18 +2,17 @@ package io.javafast.transport;
 
 import io.javafast.http.HttpMethod;
 import io.javafast.internal.ByteString;
+import io.javafast.util.HostValidator;
 
 import java.nio.ByteOrder;
 
 /**
  * HTTP 1.1 Request Decoder
- * TODO throw malformed when there is no Host header!
+ * MAX_BODY_SIZE is checked in ProtocolHandler, so we safely skip it here
  */
 public class HttpRequestDecoder {
 
     private static final int MAX_HEADER_COUNT = Integer.getInteger("javafast.max.header.count", 64);
-    // TODO already checked in ProtocolHandler, do we need to check again?
-    private static final int MAX_BODY_SIZE = Integer.getInteger("javafast.max.request.body.size", 1 << 23); // aka 8MB
 
     private static final boolean LITTLE_ENDIAN = ByteOrder.nativeOrder() == ByteOrder.LITTLE_ENDIAN;
 
@@ -34,6 +33,7 @@ public class HttpRequestDecoder {
     private static final byte HTAB = '\t';
     private static final byte SEMICOLON = ':';
 
+    private static final String HOST = "host";
     private static final String CONTENT_LENGTH = "content-length";
     private static final String TRANSFER_ENCODING = "transfer-encoding";
     private static final String TRANSFER_CODE_CHUNKED = "chunked";
@@ -103,6 +103,9 @@ public class HttpRequestDecoder {
     private int contentLength; // due to MAX_REQUEST_SIZE check int is enough
     private boolean chunked;
 
+    private final ByteString target = new ByteString(32);
+    private final ByteString host = new ByteString(32);
+
     public void parse(TransportBuffer.Reader reader) {
         this.reader = reader;
         this.reader.reset();
@@ -118,12 +121,17 @@ public class HttpRequestDecoder {
         this.bodyLength = 0;
         this.contentLength = 0;
         this.chunked = false;
+        this.target.clear();
+        this.host.clear();
 
         if (!reader.hasRemaining()) {
             return;
         }
         parseRequestLine();
         parseHeaders();
+        if (this.headersCount == 0 || this.host.length() == 0) {
+            throw HttpRequestException.MALFORMED;
+        }
         parseBody();
     }
 
@@ -146,6 +154,7 @@ public class HttpRequestDecoder {
         if (this.targetLength < 0) {
             throw HttpRequestException.MALFORMED;
         }
+        this.target.reset(this.reader, this.targetStart, this.targetLength);
         this.reader.skip(this.targetLength + 1);
 
         if (!this.reader.consumeAscii("HTTP/1.1")) {
@@ -182,7 +191,20 @@ public class HttpRequestDecoder {
                 throw HttpRequestException.MALFORMED;
             }
 
-            if (this.reader.matchesAsciiIgnoreCase(CONTENT_LENGTH)) {
+            if (this.reader.matchesAsciiIgnoreCase(HOST)) {
+                if (this.host.length() > 0) { // multiple Host headers are not allowed
+                    throw HttpRequestException.MALFORMED;
+                }
+                this.reader.skip(nameLength + 1); // +1 for ':'
+                skipOWS();
+                valueStart = this.reader.position();
+                valueLength = this.reader.indexOf(CR, LF, true);
+                this.host.reset(this.reader, this.reader.position(), valueLength);
+                if (!HostValidator.isValidHost(this.host)) {
+                    throw HttpRequestException.MALFORMED;
+                }
+                this.reader.skip(valueLength);
+            } else if (this.reader.matchesAsciiIgnoreCase(CONTENT_LENGTH)) {
                 this.reader.skip(nameLength + 1); // +1 for ':'
                 skipOWS();
                 valueStart = this.reader.position();
@@ -196,15 +218,14 @@ public class HttpRequestDecoder {
                 this.reader.skip(nameLength + 1); // +1 for ':'
                 skipOWS();
                 valueStart = this.reader.position();
-                valueLength = this.reader.indexOf(CR, LF); // contains trailing OWS
+                valueLength = this.reader.indexOf(CR, LF, true); // auto-trim from end
                 if (valueLength < 0) {
                     throw HttpRequestException.MALFORMED;
                 }
-                valueLength -= trimOWS(valueLength); // trim trailing OWS
                 this.reader.skip(valueLength); // value can have multi values like: 123, abc, def
             }
-            // Every header must end with CRLF
-            if (!this.reader.consume(CR, LF)) {
+            skipOWS();
+            if (!this.reader.consume(CR, LF)) { // Every header must end with CRLF
                 throw HttpRequestException.MALFORMED;
             }
 
@@ -217,26 +238,6 @@ public class HttpRequestDecoder {
         while (this.reader.consume(SPACE) || this.reader.consume(HTAB)) {
             // OWS
         }
-    }
-
-    /**
-     * Calculates trim amount from last, doesn't modify reader position
-     *
-     * @param offset offset after reader's position
-     * @return trim amount
-     */
-    private int trimOWS(int offset) {
-        int rewind = 0;
-        final int pos = this.reader.position();
-        int cursor = pos + offset;
-        while (cursor > 0) {
-            final int c = this.reader.getAt(--cursor);
-            if (c != SPACE && c != HTAB) {
-                break;
-            }
-            rewind++;
-        }
-        return rewind;
     }
 
     private void addHeader(int offset, int nameStart, int nameLength, int valueStart, int valueLength) {
@@ -265,28 +266,25 @@ public class HttpRequestDecoder {
         if (digits == 0) { // valueLength = -1 also ends up here
             throw HttpRequestException.MALFORMED; // no digit or CRLF
         }
-        this.reader.skip(valueLength - digits); // keep position aligned
         this.contentLength = value;
         return digits; // parsed length
     }
 
     private int parseTransferEncoding() {
-        final int valueLength = this.reader.indexOf(CR, LF);
+        final int valueLength = this.reader.indexOf(CR, LF, true);
         if (valueLength < 0) {
             throw HttpRequestException.MALFORMED;
         }
-        final int rewind = trimOWS(valueLength); // handle trailing OWS
-        final int lengthTrimmed = valueLength - rewind;
-        if (lengthTrimmed < TRANSFER_CODE_CHUNKED.length()) {
+        if (valueLength < TRANSFER_CODE_CHUNKED.length()) {
             throw HttpRequestException.MALFORMED;
         }
-        this.reader.skip(lengthTrimmed - TRANSFER_CODE_CHUNKED.length());
+        this.reader.skip(valueLength - TRANSFER_CODE_CHUNKED.length());
         if (!this.reader.matchesAsciiIgnoreCase(TRANSFER_CODE_CHUNKED)) {
             throw HttpRequestException.UNSUPPORTED_TRANSFER_ENCODING;
         }
-        this.reader.skip(TRANSFER_CODE_CHUNKED.length() + rewind); // keep position aligned
+        this.reader.skip(TRANSFER_CODE_CHUNKED.length()); // keep position aligned
         this.chunked = true;
-        return lengthTrimmed; // parsed length
+        return valueLength; // parsed length
     }
 
     private void parseBody() {
@@ -301,9 +299,6 @@ public class HttpRequestDecoder {
     }
 
     private void parseFixedLengthBody() {
-        if (this.contentLength > MAX_BODY_SIZE) {
-            throw HttpRequestException.REQUEST_TOO_LARGE;
-        }
         this.bodyStart = this.reader.position();
         this.bodyLength = this.contentLength;
         this.reader.skip(this.bodyLength);
@@ -314,21 +309,14 @@ public class HttpRequestDecoder {
     }
 
     public HttpMethod getMethod() {
-        if (this.method != null) {
-            return this.method;
+        if (this.method == null) {
+            this.method = HttpMethod.of(this.reader.getAscii(this.methodStart, this.methodLength));
         }
-        return HttpMethod.of(this.reader.getAscii(this.methodStart, this.methodLength));
+        return this.method;
     }
 
-    public String getTarget() {
-        return this.reader.getAscii(this.targetStart, this.targetLength);
-    }
-
-    /**
-     * Fills the target path into ByteString
-     */
-    public void getTarget(ByteString target) {
-        target.reset(this.reader, this.targetStart, this.targetLength);
+    public ByteString getTarget() {
+        return this.target;
     }
 
     public int getHeadersCount() {

@@ -495,6 +495,14 @@ public final class TransportBuffer implements AutoCloseable {
         int indexOf(byte first, byte second);
 
         /**
+         * Finds a two-byte value starting from the current cursor position.
+         * Handles block boundaries. Optionally, trims the space and htab from the end.
+         *
+         * @return cursor relative position (length)
+         */
+        int indexOf(byte first, byte second, boolean trim);
+
+        /**
          * Retrieves the byte at the specified position without modifying the cursor
          *
          * @param position the zero-based index of the byte to retrieve
@@ -523,7 +531,10 @@ public final class TransportBuffer implements AutoCloseable {
 
     public sealed class ReaderImpl implements Reader permits VectorizedReader {
 
-        private final Block head;
+        protected static final byte SPACE = ' ';
+        protected static final byte HTAB = '\t';
+
+        protected final Block head;
 
         Block current;
         int currentOffset;
@@ -830,41 +841,52 @@ public final class TransportBuffer implements AutoCloseable {
             return -1;
         }
 
-        /**
-         * Finds a two-byte value starting from the current cursor position.
-         * Handles block boundaries.
-         * Checks two bytes on the wire sequentially. Therefore, it depends on the wire's endianness.
-         *
-         * @return cursor relative position (length)
-         */
         @Override
         public int indexOf(byte first, byte second) {
+            return indexOf(first, second, false);
+        }
+
+        @Override
+        public int indexOf(byte first, byte second, boolean trim) {
             Block block = this.current;
             int blockOffset = this.currentOffset;
-            long relativePos = 0;
+            int relativePos = 0;
 
+            int spaces = 0;
             while (block != null) {
                 final MemorySegment segment = block.payload();
                 final int end = written(block);
                 // Fast path: both bytes reside in this block.
                 for (int i = blockOffset; i < end - 1; i++) {
-                    if (segment.get(ValueLayout.JAVA_BYTE, i) == first &&
-                        segment.get(ValueLayout.JAVA_BYTE, i + 1) == second) {
-                        return (int) (relativePos + (i - blockOffset));
+                    final byte b1 = segment.get(ValueLayout.JAVA_BYTE, i);
+                    final byte b2 = segment.get(ValueLayout.JAVA_BYTE, i + 1);
+                    if (trim && (b1 == SPACE || b1 == HTAB)) {
+                        spaces++;
+                        continue;
                     }
+                    if (b1 == first && b2 == second) {
+                        return relativePos + (i - blockOffset) - spaces;
+                    }
+                    spaces = 0;
                 }
                 // Slow path: first byte is the last byte of this block.
-                if (blockOffset < end &&
-                    segment.get(ValueLayout.JAVA_BYTE, end - 1) == first) {
-                    final Block next = block.next();
-                    if (next != null) {
-                        final MemorySegment nextSegment = next.payload();
-                        if (written(next) > 0 &&
-                            nextSegment.get(ValueLayout.JAVA_BYTE, 0) == second) {
-                            return (int) (relativePos + (end - blockOffset - 1));
+                if (blockOffset < end) {
+                    final byte last = segment.get(ValueLayout.JAVA_BYTE, end - 1);
+                    if (trim && (last == SPACE || last == HTAB)) {
+                        spaces++;
+                    }
+                    if (last == first) {
+                        final Block next = block.next();
+                        if (next != null) {
+                            final MemorySegment nextSegment = next.payload();
+                            if (written(next) > 0 && nextSegment.get(ValueLayout.JAVA_BYTE, 0) == second) {
+                                return relativePos + (end - blockOffset - 1) - spaces;
+                            }
                         }
+                        spaces = 0;
                     }
                 }
+
                 relativePos += end - blockOffset;
                 block = block.next();
                 blockOffset = 0;
@@ -1101,11 +1123,9 @@ public final class TransportBuffer implements AutoCloseable {
     public final class VectorizedReader extends ReaderImpl {
 
         private static final VectorSpecies<Byte> SPECIES = ByteVector.SPECIES_PREFERRED;
-        private final Block head;
 
         private VectorizedReader(Block head) {
             super(head);
-            this.head = head;
         }
 
         @Override

@@ -22,7 +22,6 @@ import java.util.stream.Stream;
  */
 final class RequestContext implements Context {
 
-    // TODO can be singleton!
     private final HttpRequestDecoder decoder = new HttpRequestDecoder();
 
     private TransportBuffer.Writer writer;
@@ -34,7 +33,6 @@ final class RequestContext implements Context {
     private AppData appData;
     private String contextPath;
 
-    final ByteString target = new ByteString(32);
     private HttpMethod method;
     private String path;
     private String queryString;
@@ -107,7 +105,6 @@ final class RequestContext implements Context {
 
         this.reader.reset();
         this.decoder.parse(this.reader);
-        this.decoder.getTarget(this.target);
     }
 
     @Override
@@ -131,11 +128,11 @@ final class RequestContext implements Context {
     @Override
     public String path() {
         if (this.path == null) {
-            final int index = this.target.indexOf('?');
+            final int index = getTarget().indexOf('?');
             if (index == -1) {
-                this.path = this.target.toString();
+                this.path = getTarget().toString();
             } else {
-                this.path = this.target.substring(0, index);
+                this.path = getTarget().substring(0, index);
             }
         }
         return this.path;
@@ -196,11 +193,11 @@ final class RequestContext implements Context {
     @Override
     public String queryString() {
         if (this.queryString == null) {
-            final int index = this.target.indexOf('?');
+            final int index = getTarget().indexOf('?');
             if (index == -1) {
                 this.queryString = "";
             } else {
-                this.queryString = this.target.substring(index + 1, this.target.length());
+                this.queryString = getTarget().substring(index + 1, getTarget().length());
             }
         }
         return this.queryString;
@@ -587,6 +584,10 @@ final class RequestContext implements Context {
     public Context skipRemainingHandlers() {
         this.skipRemainingHandlers = true;
         return this;
+    }
+
+    ByteString getTarget() {
+        return this.decoder.getTarget();
     }
 
     boolean isSkipRemainingHandlers() {
