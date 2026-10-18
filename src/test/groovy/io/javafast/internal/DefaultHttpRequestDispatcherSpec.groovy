@@ -13,7 +13,7 @@ class DefaultHttpRequestDispatcherSpec extends Specification implements TestUtil
     HttpTestRequestEncoder encoder
 
     def setup() {
-        this.buffer = TransportBuffer.create(64, 1)
+        this.buffer = TransportBuffer.create(64, 2)
         this.encoder = new HttpTestRequestEncoder()
     }
 

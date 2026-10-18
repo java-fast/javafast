@@ -2,6 +2,7 @@ package io.javafast.transport;
 
 import java.io.IOException;
 import java.nio.BufferOverflowException;
+import java.nio.channels.SelectionKey;
 import java.nio.channels.SocketChannel;
 
 final class SocketConnection {
@@ -9,20 +10,27 @@ final class SocketConnection {
     private static final int MAX_READS_PER_TURN = 16;
     private static final int MAX_READ_BYTES_PER_TURN = 64 * 1024;
 
-    final SocketChannel channel;
+    private final SelectionKey key;
+    private final SocketChannel channel;
+    private final ProtocolHandler protocolHandler;
+    final ResponseBuffer responseBuffer = ResponseBuffer.create(Integer.getInteger("javafast.socket.response.buffer.size", 16));
+    long lastReadNanos; // socket read time
 
-    // Request state
     TransportBuffer.Writer writer;
-    TransportBuffer.Reader published;
+    TransportBuffer.Writer published;
+    long publishedSequence;
 
-    long lastReadNanos;
+    ResponseBuffer.ResponseSlot response; // current response
 
-    ProtocolHandler protocolHandler;
-
-    SocketConnection(SocketChannel channel, ProtocolHandler protocolHandler, long now) {
+    SocketConnection(SelectionKey key, SocketChannel channel, ProtocolHandler protocolHandler, long now) {
+        this.key = key;
         this.channel = channel;
         this.protocolHandler = protocolHandler;
         this.lastReadNanos = now;
+    }
+
+    SelectionKey key() {
+        return this.key;
     }
 
     boolean read(TransportBuffer buffer, long now) throws IOException {
@@ -53,21 +61,32 @@ final class SocketConnection {
             bytes += written;
             reads++;
             this.lastReadNanos = now;
+            // FIXME a socket read can have multiple HTTP requests!
+            // In this case, we should know the first request boundary (where it finishes)
+            // Then, discard the other requests' bytes and publish the first one
+            // Because a TransportBuffer.Block must always have a single HTTP request!
             this.protocolHandler.onBytes(this.writer.reader(), written);
             if (this.protocolHandler.payloadComplete()) {
-                publish();
-                return true;
+                return publish();
             }
         }
 
         return false;
     }
 
-    private void publish() {
-        this.published = this.writer.reader();
-        this.published.reset();
-        this.protocolHandler.reset();
-        this.writer = null;
+    private boolean publish() {
+        final TransportBuffer.Reader reader = this.writer.reader();
+        final long sequence = this.responseBuffer.offer(reader);
+        if (sequence != -1) {
+            reader.reset();
+            this.publishedSequence = sequence;
+            this.published = this.writer;
+            this.protocolHandler.reset();
+            this.writer = null;
+            return true;
+        }
+        // TODO disable OP_READ?
+        return false; // response buffer is full, backpressue is done by TCP socket buffers
     }
 
     private void discard() {
@@ -76,6 +95,10 @@ final class SocketConnection {
             this.writer = null;
             this.protocolHandler.reset();
         }
+    }
+
+    boolean write(TransportBuffer.Reader reader) throws IOException {
+        return reader.write(this.channel) > 0;
     }
 
     void close() {

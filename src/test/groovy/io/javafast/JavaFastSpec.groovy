@@ -2,7 +2,9 @@ package io.javafast
 
 import io.javafast.test.TestUtils
 import spock.lang.Specification
+import spock.lang.Timeout
 
+@Timeout(5)
 class JavaFastSpec extends Specification implements TestUtils {
 
     def 'test hello world' () {

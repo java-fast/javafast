@@ -10,6 +10,7 @@ import io.javafast.http.Context
 import io.javafast.http.HttpMethod
 import io.javafast.internal.ByteString
 import io.javafast.internal.RequestContext
+import io.javafast.transport.JdkHttpTransport
 import io.javafast.transport.JdkTestTransport
 import io.javafast.transport.Transport
 import io.javafast.transport.TransportBuffer
@@ -181,13 +182,15 @@ trait TestUtils implements Logger {
     }
 
     TestExchange exchange(String method, String uri, String body = null) {
-        return new TestExchange(method, uri, body)
+        def exchange = new TestExchange(method, uri, body)
+        exchange.requestHeaders.add('Host', 'localhost') // host header is mandatory
+        return exchange
     }
 
     Context contextOf(HttpMethod method, String uri) {
         def ctx = new RequestContext()
         ctx.method = method
-        ctx.path.reset(reader(uri), 0, uri.length())
+        ctx.target.reset(reader(uri), 0, uri.length())
         return ctx
     }
 
@@ -199,7 +202,8 @@ trait TestUtils implements Logger {
     }
 
     JavaFast create(Consumer<JavaFastConfig> config) {
-        return create(8000, JdkTestTransport::new, config)
+        def transportFactory = () -> new JdkHttpTransport(TransportBuffer.create(1024, 1024))
+        return create(8000, transportFactory, config)
     }
 
     HttpClient client() {

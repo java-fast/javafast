@@ -1,5 +1,6 @@
 package io.javafast.http;
 
+import java.nio.charset.StandardCharsets;
 import java.util.Map;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -72,38 +73,47 @@ public enum HttpStatus {
     private static final Map<Integer, HttpStatus> BY_CODE = Stream.of(values()).collect(Collectors.toUnmodifiableMap(s -> s.code, s -> s));
     private final int code;
     private final String message;
+    private final byte[] wireBytes;
 
     HttpStatus(int code, String message) {
         this.code = code;
         this.message = message;
+        this.wireBytes = toString().getBytes(StandardCharsets.US_ASCII);
     }
 
     public int code() {
-        return code;
+        return this.code;
     }
 
     public String message() {
-        return message;
+        return this.message;
+    }
+
+    /**
+     * Unsafe message bytes. Do not modify it!
+     */
+    public byte[] getWireBytes() {
+        return this.wireBytes;
     }
 
     public boolean isInformational() {
-        return code >= 100 && code < 200;
+        return this.code >= 100 && this.code < 200;
     }
 
     public boolean isSuccess() {
-        return code >= 200 && code < 300;
+        return this.code >= 200 && this.code < 300;
     }
 
     public boolean isRedirection() {
-        return code >= 300 && code < 400;
+        return this.code >= 300 && this.code < 400;
     }
 
     public boolean isClientError() {
-        return code >= 400 && code < 500;
+        return this.code >= 400 && this.code < 500;
     }
 
     public boolean isServerError() {
-        return code >= 500 && code < 600;
+        return this.code >= 500 && this.code < 600;
     }
 
     public boolean isError() {
@@ -116,6 +126,6 @@ public enum HttpStatus {
 
     @Override
     public String toString() {
-        return code + " " + message;
+        return this.code + " " + this.message;
     }
 }

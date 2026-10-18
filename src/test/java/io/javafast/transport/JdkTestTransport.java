@@ -48,6 +48,9 @@ public class JdkTestTransport implements Transport {
                     writer.release();
                 }
             }
+//            exchange.sendResponseHeaders(200, 11);
+//            exchange.getResponseBody().write("Hello World".getBytes());
+//            exchange.close();
         });
 
         this.server.start();
@@ -65,16 +68,5 @@ public class JdkTestTransport implements Transport {
         }
         throw new IllegalStateException("Server is not started");
     }
-
-    static void test(int counter) {
-        System.out.println(counter);
-    }
-
-    static void main() {
-        int counter = 0;
-        test(counter++);
-        System.out.println(counter);
-    }
-
 
 }

@@ -16,6 +16,7 @@ public final class JdkHttpTransport implements Transport {
 
     private static final int REQUEST_POOL_SIZE = Integer.getInteger("javafast.request.pool.size", 1024); // max pre-allocated request contexts
 
+    private final ApplicationRuntime runtime;
     private final TransportBuffer transportBuffer;
 
     private ServerSocketChannel serverChannel;
@@ -27,19 +28,19 @@ public final class JdkHttpTransport implements Transport {
     private Thread selectorThread;
 
     public JdkHttpTransport(TransportBuffer transportBuffer) {
+        this.runtime = JavaFastRuntime.current();
         this.transportBuffer = transportBuffer;
     }
 
     @Override
     public void start(TransportConfig config) {
-        final ApplicationRuntime runtime = JavaFastRuntime.current();
         try {
             this.selector = Selector.open();
             this.socketSelector = new SocketSelector(
                 this.selector,
                 this.transportBuffer,
                 new HttpProtocolHandler(), // instance per selector thread
-                new DefaultHttpRequestDispatcher(RequestContextPool.create(REQUEST_POOL_SIZE), runtime.routing(), runtime.appData()) // instance per selector thread
+                new DefaultHttpRequestDispatcher(RequestContextPool.create(REQUEST_POOL_SIZE), this.runtime.routing(), this.runtime.appData()) // instance per selector thread
             );
             this.serverChannel = ServerSocketChannel.open();
             this.serverChannel.configureBlocking(true);

@@ -12,7 +12,6 @@ class HttpRequestDecoderSpec extends Specification implements TestUtils {
         def encoder = new HttpTestRequestEncoder()
         def decoder = new HttpRequestDecoder()
         def ex = exchange('POST', '/users/42?active=true')
-        ex.requestHeaders.add('Host', 'example.com:8080')
         ex.requestHeaders.add('Content-Length', '0')
         ex.requestHeaders.add('X-Test', 'abc')
 
@@ -24,14 +23,14 @@ class HttpRequestDecoderSpec extends Specification implements TestUtils {
 
         then:
         decoder.method == HttpMethod.POST
-        decoder.host.toString() == 'example.com:8080'
+        decoder.host.toString() == 'localhost'
         decoder.target.toString() == '/users/42?active=true'
         decoder.contentLength == 0
         !decoder.chunked
         decoder.getHeaderName(0) == 'Host'
         decoder.getHeaderName(1) == 'Content-length'
         decoder.getHeaderName(2) == 'X-test'
-        decoder.getHeader(0) == 'example.com:8080'
+        decoder.getHeader(0) == 'localhost'
         decoder.getHeader(1) == '0'
         decoder.getHeader(2) == 'abc'
         decoder.getBodyAsString() == ''
@@ -47,7 +46,6 @@ class HttpRequestDecoderSpec extends Specification implements TestUtils {
         def encoder = new HttpTestRequestEncoder()
         def decoder = new HttpRequestDecoder()
         def ex = exchange('POST', '/users/42?active=true', 'b' + 'o'.repeat(127))
-        ex.requestHeaders.add('Host', 'example.com')
         ex.requestHeaders.add('Content-Length', '128')
         ex.requestBody
 
@@ -79,7 +77,6 @@ class HttpRequestDecoderSpec extends Specification implements TestUtils {
 
         when: 'supported multiple codes'
         def ex = exchange('GET', '/stream')
-        ex.requestHeaders.add('Host', '192.168.1.10:8080')
         ex.requestHeaders.add('Transfer-Encoding', 'gzip, chunked')
         def writer = encoder.encode(ex, buffer)
         def reader = writer.reader()
@@ -95,7 +92,6 @@ class HttpRequestDecoderSpec extends Specification implements TestUtils {
         when: 'supported single code'
         writer.release()
         ex = exchange('GET', '/stream')
-        ex.requestHeaders.add('Host', '[::1]:8080')
         ex.requestHeaders.add('Transfer-Encoding', 'chunked')
         writer = encoder.encode(ex, buffer)
         reader = writer.reader()
@@ -111,7 +107,6 @@ class HttpRequestDecoderSpec extends Specification implements TestUtils {
         when: 'supported with OWS'
         writer.release()
         ex = exchange('GET', '/stream')
-        ex.requestHeaders.add('Host', '[2001:db8::1]')
         ex.requestHeaders.add('Transfer-Encoding', ' chunked    ')
         writer = encoder.encode(ex, buffer)
         reader = writer.reader()
@@ -127,7 +122,6 @@ class HttpRequestDecoderSpec extends Specification implements TestUtils {
         when: 'unsupported transfer encoding'
         writer.release()
         ex = exchange('GET', '/stream')
-        ex.requestHeaders.add('Host', 'example.com')
         ex.requestHeaders.add('Transfer-Encoding', 'chunked, gzip') // not valid in RFC 9112
         writer = encoder.encode(ex, buffer)
         reader = writer.reader()
@@ -141,7 +135,6 @@ class HttpRequestDecoderSpec extends Specification implements TestUtils {
         when: 'unsupported transfer encoding'
         writer.release()
         ex = exchange('GET', '/stream')
-        ex.requestHeaders.add('Host', 'example.com')
         ex.requestHeaders.add('Transfer-Encoding', 'gzip') // not valid in RFC 9112
         writer = encoder.encode(ex, buffer)
         reader = writer.reader()
@@ -163,6 +156,7 @@ class HttpRequestDecoderSpec extends Specification implements TestUtils {
         def encoder = new HttpTestRequestEncoder()
         def decoder = new HttpRequestDecoder()
         def ex = exchange('POST', '/users/42?active=true')
+        ex.requestHeaders.clear()
         ex.requestHeaders.add('Host', ' example.com  ')
         ex.requestHeaders.add('Content-Length', ' 0  ')
         ex.requestHeaders.add('X-Test', '  abc efg   ')
@@ -197,6 +191,7 @@ class HttpRequestDecoderSpec extends Specification implements TestUtils {
         def encoder = new HttpTestRequestEncoder()
         def decoder = new HttpRequestDecoder()
         def ex = exchange('GET', '/users')
+        ex.requestHeaders.clear()
         ex.requestHeaders.add('Content-Length', '0')
 
         def writer = encoder.encode(ex, buffer)
@@ -212,6 +207,7 @@ class HttpRequestDecoderSpec extends Specification implements TestUtils {
         when: 'host header is invalid'
         writer.release()
         ex = exchange('GET', '/users')
+        ex.requestHeaders.clear()
         ex.requestHeaders.add('Host', 'invalid@example.com')
         writer = encoder.encode(ex, buffer)
         reader = writer.reader()
@@ -226,6 +222,7 @@ class HttpRequestDecoderSpec extends Specification implements TestUtils {
         when: 'host header ipv6 is invalid'
         writer.release()
         ex = exchange('GET', '/users')
+        ex.requestHeaders.clear()
         ex.requestHeaders.add('Host', '[invalid]')
         writer = encoder.encode(ex, buffer)
         reader = writer.reader()

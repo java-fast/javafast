@@ -1,5 +1,6 @@
 package io.javafast.transport;
 
+import io.javafast.internal.ByteString;
 import jdk.incubator.vector.ByteVector;
 import jdk.incubator.vector.VectorMask;
 import jdk.incubator.vector.VectorOperators;
@@ -286,7 +287,6 @@ public final class TransportBuffer implements AutoCloseable {
                 if (!target.hasRemaining()) {
                     final Block next = acquire();
                     if (next == null) {
-                        this.currentWritten += read;
                         this.totalWritten += read;
                         if (read > 0) {
                             return read;
@@ -303,11 +303,11 @@ public final class TransportBuffer implements AutoCloseable {
                     return read == 0 ? -1 : read;
                 }
                 read += written;
+                this.currentWritten += written;
                 if (written == 0 || target.hasRemaining()) {
                     break;
                 }
             }
-            this.currentWritten += read;
             this.totalWritten += read;
             return read;
         }
@@ -325,6 +325,10 @@ public final class TransportBuffer implements AutoCloseable {
             ensureWritableBlock();
             this.current.payload.set(ValueLayout.JAVA_BYTE, this.currentWritten++, (byte) value);
             this.totalWritten++;
+        }
+
+        public void writeBytes(byte[] bytes) {
+            writeBytes(bytes, 0, bytes.length);
         }
 
         public void writeBytes(byte[] bytes, int offset, int length) {
@@ -387,6 +391,15 @@ public final class TransportBuffer implements AutoCloseable {
             }
             this.current = next;
             this.currentWritten = 0;
+        }
+
+        /**
+         * Mostly for debugging
+         */
+        public String toString() {
+            final var bs = new ByteString(this.totalWritten);
+            bs.reset(this.head.reader, 0, this.totalWritten);
+            return bs.toString();
         }
     }
 
@@ -1002,6 +1015,7 @@ public final class TransportBuffer implements AutoCloseable {
                 remaining -= written;
                 totalWritten += written;
                 this.currentOffset += written;
+                this.position += written;
             }
             return totalWritten;
         }

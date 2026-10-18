@@ -11,9 +11,11 @@ class TransportBufferOutputStreamSpec extends Specification implements Transport
     private static final int PAYLOAD_SIZE = BLOCK_SIZE - 8
 
     private TransportBuffer buffer
+    private TransportBufferOutputStream output
 
     def setup() {
         buffer = TransportBuffer.create(BLOCK_SIZE, 4)
+        output = new TransportBufferOutputStream()
     }
 
     def cleanup() {
@@ -23,7 +25,7 @@ class TransportBufferOutputStreamSpec extends Specification implements Transport
     def "write(int) writes a single byte"() {
         given:
         def writer = buffer.writer()
-        def output = new TransportBufferOutputStream(writer)
+        output.reset(writer)
 
         when:
         output.write(0x41)
@@ -38,7 +40,7 @@ class TransportBufferOutputStreamSpec extends Specification implements Transport
     def "write(byte[]) writes the entire array"() {
         given:
         def writer = buffer.writer()
-        def output = new TransportBufferOutputStream(writer)
+        output.reset(writer)
         byte[] source = [10, 20, 30, 40, 50] as byte[]
 
         when:
@@ -52,7 +54,7 @@ class TransportBufferOutputStreamSpec extends Specification implements Transport
     def "write(byte[], offset, length) writes only the requested range"() {
         given:
         def writer = buffer.writer()
-        def output = new TransportBufferOutputStream(writer)
+        output.reset(writer)
         byte[] source = [10, 20, 30, 40, 50, 60] as byte[]
 
         when:
@@ -66,7 +68,7 @@ class TransportBufferOutputStreamSpec extends Specification implements Transport
     def "write with zero length writes nothing"() {
         given:
         def writer = buffer.writer()
-        def output = new TransportBufferOutputStream(writer)
+        output.reset(writer)
         byte[] source = [1, 2, 3] as byte[]
 
         when:
@@ -80,7 +82,7 @@ class TransportBufferOutputStreamSpec extends Specification implements Transport
     def "write spans multiple blocks without losing or reordering bytes"() {
         given:
         def writer = buffer.writer()
-        def output = new TransportBufferOutputStream(writer)
+        output.reset(writer)
         byte[] source = new byte[PAYLOAD_SIZE * 2 + 13]
         new Random(42).nextBytes(source)
 
@@ -95,7 +97,7 @@ class TransportBufferOutputStreamSpec extends Specification implements Transport
     def "single-byte and array writes can be mixed across a block boundary"() {
         given:
         def writer = buffer.writer()
-        def output = new TransportBufferOutputStream(writer)
+        output.reset(writer)
 
         byte[] prefix = new byte[PAYLOAD_SIZE - 2]
         byte[] suffix = [101, 102, 103, 104, 105] as byte[]
@@ -121,7 +123,7 @@ class TransportBufferOutputStreamSpec extends Specification implements Transport
     def "write(byte[], offset, length) rejects an invalid range"() {
         given:
         def writer = buffer.writer()
-        def output = new TransportBufferOutputStream(writer)
+        output.reset(writer)
         byte[] source = [1, 2, 3] as byte[]
 
         when:
@@ -135,7 +137,7 @@ class TransportBufferOutputStreamSpec extends Specification implements Transport
     def "flush does not alter the written payload"() {
         given:
         def writer = buffer.writer()
-        def output = new TransportBufferOutputStream(writer)
+        output.reset(writer)
         byte[] source = [1, 2, 3, 4] as byte[]
 
         when:

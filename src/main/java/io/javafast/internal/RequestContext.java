@@ -22,6 +22,12 @@ import java.util.stream.Stream;
  */
 final class RequestContext implements Context {
 
+    private static final byte CR = '\r';
+    private static final byte LF = '\n';
+    private static final byte SPACE = ' ';
+    private static final byte[] HTTP_1_1_ = "HTTP/1.1 ".getBytes(StandardCharsets.US_ASCII);
+    private static final byte[] CONTENT_LENGTH_ = "Content-Length: ".getBytes(StandardCharsets.US_ASCII);
+
     private final HttpRequestDecoder decoder = new HttpRequestDecoder();
 
     private TransportBuffer.Writer writer;
@@ -43,9 +49,8 @@ final class RequestContext implements Context {
     private Map<String, String> responseHeaders;
     private String responseBody;
     private InputStream responseBodyInputStream;
-
-    // line + headers + body
-    private final TransportBufferOutputStream responseOutputStream = new TransportBufferOutputStream();
+    private int responseContentLength;
+    private final TransportBufferOutputStream responseBodyOutputStream = new TransportBufferOutputStream();
 
     private void ensureRequestReadable() {
         if (this.writingResponse) {
@@ -454,7 +459,9 @@ final class RequestContext implements Context {
     @Override
     public Context result(String value) {
         this.responseBody = value;
-        this.responseBodyInputStream = new ByteArrayInputStream(value.getBytes(StandardCharsets.UTF_8));
+        final byte[] bytes = value.getBytes(StandardCharsets.UTF_8);
+        this.responseBodyInputStream = new ByteArrayInputStream(bytes);
+        this.responseContentLength = bytes.length;
         return this;
     }
 
@@ -462,6 +469,7 @@ final class RequestContext implements Context {
     public Context result(byte[] bytes) {
         this.responseBody = null;
         this.responseBodyInputStream = new ByteArrayInputStream(bytes);
+        this.responseContentLength = bytes.length;
         return this;
     }
 
@@ -469,6 +477,8 @@ final class RequestContext implements Context {
     public Context result(InputStream stream) {
         this.responseBody = null;
         this.responseBodyInputStream = stream;
+        // TODO how to calculate contentLength?
+        this.responseContentLength = -1;
         return this;
     }
 
@@ -479,7 +489,7 @@ final class RequestContext implements Context {
 
     @Override
     public InputStream resultInputStream() {
-        return Objects.requireNonNullElseGet(this.responseBodyInputStream, InputStream::nullInputStream);
+        return this.responseBodyInputStream;
     }
 
     @Override
@@ -603,20 +613,35 @@ final class RequestContext implements Context {
             return;
         }
         this.writingResponse = true;
-        this.responseOutputStream.reset(this.writer);
-        // TODO write response line
-        // TODO write status code
+        this.reader.reset();
+        this.responseBodyOutputStream.reset(this.writer);
+        // write status line
+        this.writer.writeBytes(HTTP_1_1_);
+        this.writer.writeBytes(status().getWireBytes());
+        this.writer.writeByte(CR);
+        this.writer.writeByte(LF);
         if (this.responseHeaders != null) { // write response headers
             // TODO write response headers to response
         }
-
-        if (this.method == HttpMethod.HEAD) {
+        if (this.method == HttpMethod.HEAD
+            || this.statusCode == 204
+            || this.statusCode == 304
+        ) {
+            this.writer.writeByte(CR);
+            this.writer.writeByte(LF);
             return; // no body for HEAD
         }
-
-        final var stream = resultInputStream();
-        if (stream != null) {
-            try (stream; final var out = this.responseOutputStream) {
+        if (this.responseContentLength > -1) {
+            this.writer.writeBytes(CONTENT_LENGTH_);
+            this.writer.writeBytes(Integer.toString(this.responseContentLength).getBytes(StandardCharsets.UTF_8));
+            this.writer.writeByte(CR);
+            this.writer.writeByte(LF);
+        }
+        this.writer.writeByte(CR);
+        this.writer.writeByte(LF);
+        final InputStream stream;
+        if ((stream = resultInputStream()) != null) {
+            try (stream; final var out = this.responseBodyOutputStream) {
                 stream.transferTo(out);
             }
         }
