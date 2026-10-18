@@ -21,7 +21,8 @@ import java.util.logging.Logger;
 final class SocketSelector implements Runnable {
 
     private static final Logger log = Logger.getLogger(SocketSelector.class.getName());
-    private static final long READ_TIMEOUT_NANOS = 30_000_000_000L; // 30 seconds
+
+    private static final long READ_TIMEOUT_NANOS = Long.getLong("javafast.read.timeout.nanos", 30_000_000_000L); // default 30 seconds
 
     private final Selector selector;
     private final TransportBuffer transportBuffer;
@@ -84,9 +85,9 @@ final class SocketSelector implements Runnable {
     private void processWritableSockets() {
         SocketConnection conn;
         while ((conn = this.writableSockets.poll()) != null) {
-            final SelectionKey key = conn.key();
+            final SelectionKey key = conn.key;
             if (key.isValid()) {
-                key.interestOps(key.interestOps() | SelectionKey.OP_WRITE); // enable write
+                key.interestOps(key.interestOps() | SelectionKey.OP_WRITE); // enable to write
             }
         }
     }
@@ -94,53 +95,50 @@ final class SocketSelector implements Runnable {
     private void processSelectedKeys(long now) {
         final Iterator<SelectionKey> iterator = this.selector.selectedKeys().iterator();
         SelectionKey key;
-        SocketConnection con;
+        SocketConnection conn;
         while (iterator.hasNext()) {
             key = iterator.next();
             iterator.remove();
             if (!key.isValid()) {
                 continue;
             }
-
             if (key.isReadable()) {
-                if ((con = this.connections.get(key.channel())) == null) {
+                if ((conn = this.connections.get(key.channel())) == null) {
                     key.cancel();
                     continue;
                 }
-                processRead(con, key, now);
+                processRead(conn, now);
                 if (!key.isValid()) {
                     continue;
                 }
             }
-
             if (key.isWritable()) {
-                if ((con = this.connections.get(key.channel())) == null) {
+                if ((conn = this.connections.get(key.channel())) == null) {
                     key.cancel();
                     continue;
                 }
-                processWrite(con, key, now);
+                processWrite(conn, now);
             }
         }
     }
 
-    private void processRead(SocketConnection conn, SelectionKey key, long now) {
+    private void processRead(SocketConnection conn, long now) {
         try {
             if (conn.read(this.transportBuffer, now)) {
                 // TransportBuffer ownership has now been transferred to the request processor
-                // Connection itself remains alive for HTTP keep-alive.
                 dispatch(conn);
             }
         } catch (IOException _) {
-            close(key);
+            close(conn);
         }
     }
 
-    private void processWrite(SocketConnection conn, SelectionKey key, long now) {
+    private void processWrite(SocketConnection conn, long now) {
         while (true) {
             if (conn.response == null) {
                 conn.response = conn.responseBuffer.take();
                 if (conn.response == null) { // no response ready
-                    key.interestOps(key.interestOps() & ~SelectionKey.OP_WRITE); // disable write
+                    conn.key.interestOps(conn.key.interestOps() & ~SelectionKey.OP_WRITE); // disable write
                     return;
                 }
             }
@@ -155,7 +153,7 @@ final class SocketSelector implements Runnable {
                     continue;
                 }
             } catch (IOException _) {
-                close(key);
+                close(conn);
                 return;
             }
         }
@@ -187,7 +185,7 @@ final class SocketSelector implements Runnable {
             final SocketConnection connection = entry.getValue();
             final long idle = now - connection.lastReadNanos;
             if (idle >= READ_TIMEOUT_NANOS) {
-                connection.key().cancel();
+                connection.key.cancel();
                 connection.close();
                 iterator.remove();
             }
@@ -206,11 +204,8 @@ final class SocketSelector implements Runnable {
         return (timeoutNanos == 0) ? 0 : ((timeoutNanos + 999_999) / 1_000_000);
     }
 
-    private void close(SelectionKey key) {
-        final SocketConnection connection = this.connections.remove(key.channel());
-        key.cancel();
-        if (connection != null) {
-            connection.close();
-        }
+    private void close(SocketConnection connection) {
+        connection.key.cancel();
+        connection.close();
     }
 }

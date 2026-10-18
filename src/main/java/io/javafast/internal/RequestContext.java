@@ -14,6 +14,7 @@ import java.lang.reflect.Type;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.util.*;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Function;
 import java.util.stream.Stream;
 
@@ -51,6 +52,8 @@ final class RequestContext implements Context {
     private InputStream responseBodyInputStream;
     private int responseContentLength;
     private final TransportBufferOutputStream responseBodyOutputStream = new TransportBufferOutputStream();
+
+    final AtomicBoolean occupied = new AtomicBoolean(); // CAS set by VTs
 
     private void ensureRequestReadable() {
         if (this.writingResponse) {

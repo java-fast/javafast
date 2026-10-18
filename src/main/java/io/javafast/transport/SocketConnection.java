@@ -10,9 +10,9 @@ final class SocketConnection {
     private static final int MAX_READS_PER_TURN = 16;
     private static final int MAX_READ_BYTES_PER_TURN = 64 * 1024;
 
-    private final SelectionKey key;
     private final SocketChannel channel;
     private final ProtocolHandler protocolHandler;
+    final SelectionKey key;
     final ResponseBuffer responseBuffer = ResponseBuffer.create(Integer.getInteger("javafast.socket.response.buffer.size", 16));
     long lastReadNanos; // socket read time
     long lastWriteNanos; // socket write time
@@ -28,10 +28,6 @@ final class SocketConnection {
         this.channel = channel;
         this.protocolHandler = protocolHandler;
         this.lastReadNanos = now;
-    }
-
-    SelectionKey key() {
-        return this.key;
     }
 
     boolean read(TransportBuffer buffer, long now) throws IOException {
