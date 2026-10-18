@@ -10,7 +10,7 @@ import io.javafast.router.AccessController;
 final class Router {
 
     private final RouteRegistry registry;
-    private final RouterState routerState;
+    private RouterState routerState;
 
     Router() {
         this(false, false, false, null);
@@ -22,7 +22,11 @@ final class Router {
 
     Router(RouteRegistry registry) {
         this.registry = registry;
-        this.routerState = new RouterState();
+    }
+
+    Router with(RouterState state) {
+        this.routerState = state;
+        return this;
     }
 
     void handle(Context ctx) throws Exception {

@@ -53,6 +53,7 @@ final class RequestContext implements Context {
     private int responseContentLength;
     private final TransportBufferOutputStream responseBodyOutputStream = new TransportBufferOutputStream();
 
+    final RouterState routerState = new RouterState(); // re-used by the dispatcher
     final AtomicBoolean occupied = new AtomicBoolean(); // CAS set by VTs
 
     private void ensureRequestReadable() {

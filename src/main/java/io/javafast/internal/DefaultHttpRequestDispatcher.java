@@ -31,9 +31,10 @@ public final class DefaultHttpRequestDispatcher implements RequestDispatcher {
     @Override
     public void dispatch(TransportBuffer.Writer writer) throws Exception {
         final RequestContext context = this.pool.get();
+        final RouterState state = context.routerState;
         try {
             context.reset(writer, this.appData, this.routing.contextPath); // to handle HttpRequestException
-            this.routing.handle(context);
+            this.routing.with(state).handle(context);
         } catch (Throwable throwable) {
             if (!this.routing.handleException(context, throwable)) {
                 context.status(HttpStatus.INTERNAL_SERVER_ERROR).result(HttpStatus.INTERNAL_SERVER_ERROR.message());
