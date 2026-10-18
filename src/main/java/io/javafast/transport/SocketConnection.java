@@ -10,6 +10,8 @@ final class SocketConnection {
     private static final int MAX_READS_PER_TURN = 16;
     private static final int MAX_READ_BYTES_PER_TURN = 64 * 1024;
 
+    private boolean closed;
+
     private final SocketChannel channel;
     private final ProtocolHandler protocolHandler;
     final SelectionKey key;
@@ -101,10 +103,18 @@ final class SocketConnection {
     }
 
     void close() {
+        if (this.closed) {
+            return;
+        }
+        this.closed = true;
+        if (this.response != null) {
+            this.response.reader().close();
+            this.response = null;
+        }
         try {
             this.channel.close();
         } catch (IOException _) {
-            // no-op
+            // best effort shutdown
         }
         discard();
     }

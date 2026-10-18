@@ -24,6 +24,8 @@ final class SocketSelector implements Runnable {
 
     private static final long READ_TIMEOUT_NANOS = Long.getLong("javafast.read.timeout.nanos", 30_000_000_000L); // default 30 seconds
 
+    private volatile boolean running = true;
+
     private final Selector selector;
     private final TransportBuffer transportBuffer;
     private final ProtocolHandler protocolHandler;
@@ -42,7 +44,16 @@ final class SocketSelector implements Runnable {
     }
 
     void register(SocketChannel socket) {
+        if (!this.running) {
+            closeQuietly(socket);
+            return;
+        }
         this.registrations.offer(socket);
+        // handle the race in shutdown
+        if (!this.running && this.registrations.remove(socket)) {
+            closeQuietly(socket);
+            return;
+        }
         // TODO unnecessary wakeup under high connection rates?
         this.selector.wakeup();
     }
@@ -50,7 +61,7 @@ final class SocketSelector implements Runnable {
     @Override
     public void run() {
         try {
-            while (!Thread.currentThread().isInterrupted()) {
+            while (this.running && !Thread.currentThread().isInterrupted()) {
                 registerPendingConnections();
                 long now = System.nanoTime();
                 final long timeout = computeSelectTimeout(now);
@@ -70,6 +81,8 @@ final class SocketSelector implements Runnable {
             }
         } catch (Exception e) {
             throw new RuntimeException("Selector failed", e);
+        } finally {
+            closeResources();
         }
     }
 
@@ -204,8 +217,40 @@ final class SocketSelector implements Runnable {
         return (timeoutNanos == 0) ? 0 : ((timeoutNanos + 999_999) / 1_000_000);
     }
 
+    void shutdown() {
+        this.running = false;
+        this.selector.wakeup();
+    }
+
     private void close(SocketConnection connection) {
         connection.key.cancel();
         connection.close();
     }
+
+    private void closeQuietly(SocketChannel socket) {
+        try {
+            socket.close();
+        } catch (IOException _) {
+            // best effort shutdown
+        }
+    }
+
+    private void closeResources() {
+        // all registered connections are cleared
+        this.connections.values().forEach(this::close);
+        this.connections.clear();
+        // close accepted sockets that not yet registered with the selector
+        SocketChannel socket;
+        while ((socket = this.registrations.poll()) != null) {
+            closeQuietly(socket);
+        }
+        this.writableSockets.clear();
+        this.errors.clear();
+        try {
+            this.selector.close();
+        } catch (IOException _) {
+            // best effort shutdown
+        }
+    }
+
 }

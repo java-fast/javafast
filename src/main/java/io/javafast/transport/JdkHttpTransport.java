@@ -16,6 +16,8 @@ public final class JdkHttpTransport implements Transport {
 
     private static final int REQUEST_POOL_SIZE = Integer.getInteger("javafast.request.pool.size", 1024); // max pre-allocated request contexts
 
+    private volatile boolean stopping;
+
     private final RequestContextPool requestContextPool = RequestContextPool.create(REQUEST_POOL_SIZE);
     private final ApplicationRuntime runtime;
     private final TransportBuffer transportBuffer;
@@ -55,13 +57,24 @@ public final class JdkHttpTransport implements Transport {
 
     private void acceptLoop() {
         try {
-            while (!Thread.currentThread().isInterrupted()) {
+            while (!this.stopping && !Thread.currentThread().isInterrupted()) {
                 final SocketChannel socket = this.serverChannel.accept(); // blocking
-                configure(socket);
-                this.socketSelector.register(socket);
+                if (this.stopping) {
+                    socket.close();
+                    break;
+                }
+                try {
+                    configure(socket);
+                    this.socketSelector.register(socket);
+                } catch (Exception e) {
+                    socket.close();
+                    if (!this.stopping) {
+                        throw e;
+                    }
+                }
             }
         } catch (Exception e) {
-            if (!Thread.currentThread().isInterrupted()) {
+            if (!this.stopping) {
                 throw new RuntimeException("Acceptor failed", e);
             }
         }
@@ -73,14 +86,51 @@ public final class JdkHttpTransport implements Transport {
     }
 
     @Override
-    public void stop() {
-        this.acceptorThread.interrupt();
-        this.selectorThread.interrupt();
-        try {
-            this.serverChannel.close();
-            this.selector.close();
-        } catch (IOException e) {
-            throw new UncheckedIOException("Error stopping JdkHttpTransport", e);
+    public synchronized void stop() {
+        if (this.stopping) {
+            return;
+        }
+        this.stopping = true;
+
+        IOException failure = null;
+        // stop accepting new connections
+        if (this.serverChannel != null) {
+            try {
+                this.serverChannel.close();
+            } catch (IOException e) {
+                failure = e;
+            }
+        }
+        // wake up selector and request its termination
+        if (this.socketSelector != null) {
+            this.socketSelector.shutdown();
+        }
+        // ensure the blocking accept() exits
+        if (this.acceptorThread != null) {
+            this.acceptorThread.interrupt();
+        }
+        // wait for both threads to finish cleanup
+        joinUninterruptibly(this.acceptorThread);
+        joinUninterruptibly(this.selectorThread);
+        if (failure != null) {
+            throw new UncheckedIOException("Error stopping JdkHttpTransport", failure);
+        }
+    }
+
+    private static void joinUninterruptibly(Thread thread) {
+        if (thread == null || thread == Thread.currentThread()) {
+            return;
+        }
+        boolean interrupted = false;
+        while (thread.isAlive()) {
+            try {
+                thread.join();
+            } catch (InterruptedException e) {
+                interrupted = true;
+            }
+        }
+        if (interrupted) {
+            Thread.currentThread().interrupt();
         }
     }
 

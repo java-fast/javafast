@@ -42,7 +42,10 @@ trait TestUtils implements Logger {
     }
 
     def cleanup() {
-        if(app != null) app.stop()
+        if(app != null) {
+            app.stop()
+            println("${app} stopped")
+        }
     }
 
     ByteString byteString(String value) {
@@ -195,10 +198,14 @@ trait TestUtils implements Logger {
     }
 
     JavaFast create(int port, Supplier<Transport> transportFactory, Consumer<JavaFastConfig> config) {
-        return app = JavaFast.create {
-            it.transport.factory(transportFactory)
-            config.accept(it)
-        }.start(port)
+        try {
+            return app = JavaFast.create {
+                it.transport.factory(transportFactory)
+                config.accept(it)
+            }.start(port)
+        } finally {
+            println("${app} started")
+        }
     }
 
     JavaFast create(Consumer<JavaFastConfig> config) {
