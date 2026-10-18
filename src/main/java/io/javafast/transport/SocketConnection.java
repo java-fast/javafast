@@ -15,6 +15,7 @@ final class SocketConnection {
     private final ProtocolHandler protocolHandler;
     final ResponseBuffer responseBuffer = ResponseBuffer.create(Integer.getInteger("javafast.socket.response.buffer.size", 16));
     long lastReadNanos; // socket read time
+    long lastWriteNanos; // socket write time
 
     TransportBuffer.Writer writer;
     TransportBuffer.Writer published;
@@ -97,8 +98,10 @@ final class SocketConnection {
         }
     }
 
-    boolean write(TransportBuffer.Reader reader) throws IOException {
-        return reader.write(this.channel) > 0;
+    void write(TransportBuffer.Reader reader, long now) throws IOException {
+        if (reader.write(this.channel) > 0) {
+            this.lastWriteNanos = now;
+        }
     }
 
     void close() {

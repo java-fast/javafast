@@ -93,32 +93,32 @@ final class SocketSelector implements Runnable {
 
     private void processSelectedKeys(long now) {
         final Iterator<SelectionKey> iterator = this.selector.selectedKeys().iterator();
+        SelectionKey key;
+        SocketConnection con;
         while (iterator.hasNext()) {
-            final SelectionKey key = iterator.next();
+            key = iterator.next();
             iterator.remove();
             if (!key.isValid()) {
                 continue;
             }
 
             if (key.isReadable()) {
-                final SocketConnection connection = this.connections.get(key.channel());
-                if (connection == null) {
+                if ((con = this.connections.get(key.channel())) == null) {
                     key.cancel();
                     continue;
                 }
-                processRead(connection, key, now);
+                processRead(con, key, now);
                 if (!key.isValid()) {
                     continue;
                 }
             }
 
             if (key.isWritable()) {
-                final SocketConnection connection = this.connections.get(key.channel());
-                if (connection == null) {
+                if ((con = this.connections.get(key.channel())) == null) {
                     key.cancel();
                     continue;
                 }
-                processWrite(connection, key, now);
+                processWrite(con, key, now);
             }
         }
     }
@@ -146,7 +146,7 @@ final class SocketSelector implements Runnable {
             }
             final var reader = conn.response.reader();
             try {
-                conn.write(reader);
+                conn.write(reader, now);
                 if (!reader.hasRemaining()) {
                     final long sequence = conn.response.sequence();
                     reader.close(); // release blocks
