@@ -4,7 +4,7 @@ import io.javafast.http.*;
 import io.javafast.router.HandlerWrapper;
 import io.javafast.router.RoutingApi;
 import io.javafast.router.AccessController;
-import io.javafast.util.Util;
+import io.javafast.util.Utils;
 
 import java.util.logging.Level;
 import java.util.logging.Logger;
@@ -34,7 +34,7 @@ public final class DefaultRouting implements RoutingApi {
     }
 
     public DefaultRouting(String contextPath, boolean ignoreTrailingSlashes, boolean multipleSlashes, boolean caseInsensitive, HandlerWrapper wrapper) {
-        this.contextPath = Util.normalizeContextPath(contextPath);
+        this.contextPath = Utils.normalizeContextPath(contextPath);
         this.router = new Router(ignoreTrailingSlashes, multipleSlashes, caseInsensitive, wrapper);
     }
 
@@ -65,13 +65,13 @@ public final class DefaultRouting implements RoutingApi {
 
     @Override
     public RoutingApi addHttpHandler(HttpMethod method, String path, Handler handler, AccessController controller) {
-        this.router.add(method, Util.prefixContextPath(this.contextPath, path), handler, controller);
+        this.router.add(method, Utils.prefixContextPath(this.contextPath, path), handler, controller);
         return this;
     }
 
     @Override
     public RoutingApi addHandler(HandlerPhase phase, String path, Handler handler) {
-        this.router.add(phase, Util.prefixContextPath(this.contextPath, path), handler);
+        this.router.add(phase, Utils.prefixContextPath(this.contextPath, path), handler);
         return this;
     }
 

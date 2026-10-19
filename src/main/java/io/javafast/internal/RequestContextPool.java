@@ -1,5 +1,7 @@
 package io.javafast.internal;
 
+import io.javafast.util.Utils;
+
 import java.util.concurrent.atomic.AtomicInteger;
 
 public class RequestContextPool {
@@ -8,17 +10,13 @@ public class RequestContextPool {
         return new RequestContextPool(size);
     }
 
-    private static boolean isNotPowerOfTwo(int n) {
-        return n == 0 || (n & n - 1) != 0;
-    }
-
     private final int sizeMask;
     private final RequestContext[] ctxs;
 
     private final AtomicInteger cursor = new AtomicInteger(0);
 
     private RequestContextPool(int size) {
-        if (size < 0 || isNotPowerOfTwo(size)) {
+        if (size < 0 || Utils.isNotPowerOfTwo(size)) {
             throw new IllegalArgumentException("size must be > 0 and a power of two");
         }
         this.sizeMask = size - 1;

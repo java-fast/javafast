@@ -1,13 +1,11 @@
 package io.javafast.transport;
 
+import io.javafast.util.Utils;
+
 final class ResponseBuffer {
 
     static ResponseBuffer create(int capacity) {
         return new ResponseBuffer(capacity);
-    }
-
-    private static boolean isNotPowerOfTwo(int n) {
-        return n == 0 || (n & n - 1) != 0;
     }
 
     enum SlotState {
@@ -45,7 +43,7 @@ final class ResponseBuffer {
         if (capacity <= 0) {
             throw new IllegalArgumentException("capacity must be positive");
         }
-        if (ResponseBuffer.isNotPowerOfTwo(capacity)) {
+        if (Utils.isNotPowerOfTwo(capacity)) {
             throw new IllegalArgumentException("capacity must be power of two");
         }
         this.slots = new ResponseSlot[capacity];

@@ -1,6 +1,7 @@
 package io.javafast.transport;
 
 import io.javafast.internal.ByteString;
+import io.javafast.util.Utils;
 import jdk.incubator.vector.ByteVector;
 import jdk.incubator.vector.VectorMask;
 import jdk.incubator.vector.VectorOperators;
@@ -38,10 +39,6 @@ public final class TransportBuffer implements AutoCloseable {
         return new TransportBuffer(blockSize, blockCount, useVectors);
     }
 
-    private static boolean isNotPowerOfTwo(int n) {
-        return n == 0 || (n & n - 1) != 0;
-    }
-
     private static final int FREE = 0;
     private static final int IN_USE = 1;
 
@@ -77,7 +74,7 @@ public final class TransportBuffer implements AutoCloseable {
         if (blockSize < 64) {
             throw new IllegalArgumentException("blockSize must be >= 64");
         }
-        if (blockCount < 0 || isNotPowerOfTwo(blockCount)) {
+        if (blockCount < 0 || Utils.isNotPowerOfTwo(blockCount)) {
             throw new IllegalArgumentException("blockCount must be > 0 and a power of two");
         }
 

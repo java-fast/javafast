@@ -1,6 +1,6 @@
 package io.javafast.util;
 
-public final class Util {
+public final class Utils {
 
     public static String normalizeContextPath(String contextPath) {
         if (contextPath == null || contextPath.isBlank() || "/".equals(contextPath)) {
@@ -24,6 +24,10 @@ public final class Util {
             return normalizedContextPath + "/";
         }
         return normalizedContextPath + path;
+    }
+
+    public static boolean isNotPowerOfTwo(int n) {
+        return n == 0 || (n & n - 1) != 0;
     }
 
 }
