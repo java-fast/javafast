@@ -9,11 +9,11 @@ import java.util.concurrent.TimeUnit;
 
 /**
  * Benchmark                                                          Mode  Cnt   Score    Error   Units
- * RouterMatchBenchmark.compositeParamRouteMatch                      avgt    5  78.894 ±  0.668   ns/op
+ * RouterMatchBenchmark.compositeParamRouteMatch                      avgt    5  76.703 ±  0.090   ns/op
  * RouterMatchBenchmark.compositeParamRouteMatch:·gc.alloc.rate       avgt    5  ≈ 10⁻⁴           MB/sec
  * RouterMatchBenchmark.compositeParamRouteMatch:·gc.alloc.rate.norm  avgt    5  ≈ 10⁻⁵             B/op
  * RouterMatchBenchmark.compositeParamRouteMatch:·gc.count            avgt    5     ≈ 0           counts
- * RouterMatchBenchmark.nestedParamRouteMatch                         avgt    5  64.465 ±  0.393   ns/op
+ * RouterMatchBenchmark.nestedParamRouteMatch                         avgt    5  59.533 ±  0.864   ns/op
  * RouterMatchBenchmark.nestedParamRouteMatch:·gc.alloc.rate          avgt    5  ≈ 10⁻⁴           MB/sec
  * RouterMatchBenchmark.nestedParamRouteMatch:·gc.alloc.rate.norm     avgt    5  ≈ 10⁻⁶             B/op
  * RouterMatchBenchmark.nestedParamRouteMatch:·gc.count               avgt    5     ≈ 0           counts
