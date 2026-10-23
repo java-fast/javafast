@@ -16,16 +16,17 @@ public final class HttpProtocolHandler implements ProtocolHandler {
     private static final String TRANSFER_CODE_CHUNKED = "chunked";
 
     private enum State {
+        REQUEST_LINE,
         HEADERS,
         BODY,
         COMPLETE
     }
 
-    private State state = State.HEADERS;
+    private State state = State.REQUEST_LINE;
 
     private long requestLength;
-    private long contentLength;
     private boolean contentLengthFound;
+    private long contentLength;
     private long bodyRemaining;
 
     @Override
@@ -39,16 +40,24 @@ public final class HttpProtocolHandler implements ProtocolHandler {
             throw HttpRequestException.REQUEST_TOO_LARGE;
         }
 
+        if (this.state == State.REQUEST_LINE) {
+            final int lineEnd = reader.indexOf(CR, LF);
+            if (lineEnd < 0) return;
+            reader.skip(lineEnd + 2); // skip request line
+            this.state = State.HEADERS;
+        }
+
         if (this.state == State.HEADERS) {
+            if (this.requestLength > MAX_HEADER_SIZE) {
+                throw HttpRequestException.REQUEST_TOO_LARGE;
+            }
             parseHeaders(reader);
         }
 
         if (this.state == State.BODY) {
-            final int count = (int) Math.min(bytes, this.bodyRemaining);
-
-            reader.skip(count);
-            this.bodyRemaining -= count;
-
+            final int skip = (int) Math.min(reader.remaining(), this.bodyRemaining);
+            reader.skip(skip);
+            this.bodyRemaining -= skip;
             if (this.bodyRemaining == 0) {
                 this.state = State.COMPLETE;
             }
@@ -56,13 +65,10 @@ public final class HttpProtocolHandler implements ProtocolHandler {
     }
 
     private void parseHeaders(TransportBuffer.Reader reader) {
-        reader.skip(reader.indexOf(CR, LF) + 2); // skip request line
-        int consumed;
-        while (true) {
+        while (this.state == State.HEADERS && reader.position() < this.requestLength) {
             if (reader.position() > MAX_HEADER_SIZE) {
                 throw HttpRequestException.REQUEST_TOO_LARGE;
             }
-            consumed = 0;
             final int length = reader.indexOf(CR, LF);
             if (length < 0) {
                 return;
@@ -81,15 +87,13 @@ public final class HttpProtocolHandler implements ProtocolHandler {
                 this.state = State.BODY;
                 return;
             }
-            // Check Content-Length before skipping the header.
+            int consumed = 0; // check mandatory headers before skipping the header
             if (reader.matchesAsciiIgnoreCase(CONTENT_LENGTH)) {
                 consumed = parseContentLength(reader);
-            }
-            if (reader.matchesAsciiIgnoreCase(TRANSFER_ENCODING)) {
+            } else if (reader.matchesAsciiIgnoreCase(TRANSFER_ENCODING)) {
                 consumed = parseTransferEncoding(reader);
             }
-            // Skip this header line including CRLF.
-            reader.skip(length - consumed + 2);
+            reader.skip(length + 2 - consumed); // skip this header including CRLF
         }
     }
 
@@ -128,7 +132,7 @@ public final class HttpProtocolHandler implements ProtocolHandler {
 
     @Override
     public void reset() {
-        this.state = State.HEADERS;
+        this.state = State.REQUEST_LINE;
         this.requestLength = 0;
         this.contentLength = 0;
         this.contentLengthFound = false;

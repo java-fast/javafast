@@ -344,6 +344,60 @@ public final class TransportBuffer implements AutoCloseable {
             }
         }
 
+        public void writeIntAscii(int value) {
+            ensureHead();
+            if (value == 0) {
+                writeByte('0');
+                return;
+            }
+            if (value == Integer.MIN_VALUE) {
+                writeAscii("-2147483648");
+                return;
+            }
+            if (value < 0) {
+                writeByte('-');
+                value = -value;
+            }
+            int digits = 0;
+            for (int n = value; n != 0; n /= 10) {
+                digits++;
+            }
+            int divisor = 1;
+            for (int i = 1; i < digits; i++) {
+                divisor *= 10;
+            }
+            while (divisor != 0) {
+                writeByte('0' + value / divisor);
+                value %= divisor;
+                divisor /= 10;
+            }
+        }
+
+        public void writeAscii(String value) {
+            writeAscii(value, 0, value.length());
+        }
+
+        public void writeAscii(String value, int offset, int length) {
+            Objects.checkFromIndexSize(offset, length, value.length());
+            ensureHead();
+            int sourceOffset = offset;
+            int remaining = length;
+            while (remaining > 0) {
+                ensureWritableBlock();
+                final int count = Math.min(remaining, payloadSize - this.currentWritten);
+                final int end = sourceOffset + count;
+                while (sourceOffset < end) {
+                    final char c = value.charAt(sourceOffset++);
+                    if (c > 0x7E || c < 0x20) {
+                        throw new IllegalArgumentException("Invalid ASCII character");
+                    }
+                    this.current.payload.set(ValueLayout.JAVA_BYTE, this.currentWritten++, (byte) c);
+                }
+                remaining -= count;
+                this.totalWritten += count;
+            }
+        }
+
         public void release() {
             this.head.release();
         }
@@ -500,7 +554,7 @@ public final class TransportBuffer implements AutoCloseable {
          * Handles block boundaries.
          * Checks two bytes on the wire sequentially. Therefore, it depends on the wire's endianness.
          *
-         * @return cursor relative position (length)
+         * @return cursor relative position (length) or -1 if not found
          */
         int indexOf(byte first, byte second);
 
@@ -1033,13 +1087,9 @@ public final class TransportBuffer implements AutoCloseable {
         }
 
         private void ensureAvailable() {
-            if (this.current == null) {
-                throw new IndexOutOfBoundsException("No remaining bytes");
-            }
             if (this.currentOffset < written(this.current)) {
                 return;
             }
-
             this.current = this.current.next();
             this.currentOffset = 0;
             if (this.current == null) {
@@ -1095,11 +1145,6 @@ public final class TransportBuffer implements AutoCloseable {
                 this.currentOffset += step;
                 this.position += step;
                 remaining -= step;
-
-                if (this.currentOffset == written(this.current)) {
-                    this.current = this.current.next();
-                    this.currentOffset = 0;
-                }
             }
         }
 

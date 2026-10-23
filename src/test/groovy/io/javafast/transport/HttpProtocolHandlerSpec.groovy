@@ -1,9 +1,10 @@
 package io.javafast.transport
 
 import io.javafast.test.TestUtils
+import io.javafast.test.TransportUtils
 import spock.lang.Specification
 
-class HttpProtocolHandlerSpec extends Specification implements TestUtils {
+class HttpProtocolHandlerSpec extends Specification implements TestUtils, TransportUtils {
 
     def "should throw when request size exceeds MAX_REQUEST_SIZE"() {
         given:
@@ -29,7 +30,7 @@ class HttpProtocolHandlerSpec extends Specification implements TestUtils {
         def handler = new HttpProtocolHandler()
 
         when:
-        handler.onBytes(http.reader, (int) http.reader.remaining())
+        handler.onBytes(http.reader, http.reader.remaining())
 
         then:
         def ex = thrown(HttpRequestException)
@@ -95,16 +96,33 @@ class HttpProtocolHandlerSpec extends Specification implements TestUtils {
         def handler = new HttpProtocolHandler()
 
         when: 'only part of the body arrives'
-        handler.onBytes(http.reader, 2)
+        handler.onBytes(http.reader, 21)
+        then:
+        !handler.payloadComplete()
 
+        when: 'only part of the body arrives'
+        handler.onBytes(http.reader, 10)
+        then:
+        !handler.payloadComplete()
+
+        when: 'only part of the body arrives'
+        handler.onBytes(http.reader, 7)
+        then:
+        !handler.payloadComplete()
+
+        when: 'only part of the body arrives'
+        handler.onBytes(http.reader, 9)
         then:
         !handler.payloadComplete()
 
         when: 'remaining body arrives'
-        handler.onBytes(http.reader, 3)
+        handler.onBytes(http.reader, 18)
 
         then:
         handler.payloadComplete()
+        handler.requestLength == 65
+        handler.contentLength == 5
+        handler.bodyRemaining == 0
 
         cleanup:
         http.block.release()
@@ -169,15 +187,57 @@ class HttpProtocolHandlerSpec extends Specification implements TestUtils {
         second.buffer.close()
     }
 
+    def "should handle slow responses correctly"() {
+        given:
+        def buffer = TransportBuffer.create(128, 2)
+        def writer = buffer.writer()
+        def multiRequestPartial = 'POST /users/42?foo=bar HTTP/1.1\r\n' +
+          'Host: example.com\r\n' +
+          'Content-Type: application/json\r\n' +
+          'Content-Length: 19\r\n' +
+          'X-Foo: bar\r\n' +
+          '\r\n' +
+          '{"name":"JavaFast"}'
+        def requestLength = multiRequestPartial.length()
+        multiRequestPartial += 'GET /use' // second request is partial
+        def channel = new SlowByteChannel(multiRequestPartial)
+        def reader = writer.reader()
+        def handler = new HttpProtocolHandler()
+        println("reading ${multiRequestPartial.length()} bytes slowly...")
+        int total = 0
+
+        when:
+        int read
+        while ((read = writer.read(channel)) !=-1 && !handler.payloadComplete()) {
+            handler.onBytes(reader, read)
+            total += read
+        }
+
+        then:
+        noExceptionThrown()
+        total == requestLength
+        handler.payloadComplete()
+        handler.requestLength == total
+        handler.contentLengthFound
+        handler.contentLength == 19
+        handler.bodyRemaining == 0
+        handler.state == HttpProtocolHandler.State.COMPLETE
+
+        cleanup:
+        writer.release()
+        buffer.close()
+        println("successfully parsed ${total} bytes")
+    }
+
     private Map encodedExchange(String method, String uri, String body = null, Map<String, String> headers = [:], int bufferSize = 256) {
         def buffer = TransportBuffer.create(bufferSize, 2)
         def encoder = new HttpTestRequestEncoder()
-        def ex = exchange(method, uri, body)
+        def exchange = exchange(method, uri, body)
         headers.each { name, value ->
-            ex.requestHeaders.add(name, value)
+            exchange.requestHeaders.add(name, value)
         }
 
-        def block = encoder.encode(ex, buffer)
+        def block = encoder.encode(exchange, buffer)
         [buffer: buffer, block: block, reader: block.reader()]
     }
 }

@@ -5,6 +5,8 @@ import io.javafast.transport.TransportTestSource
 
 import java.lang.foreign.MemorySegment
 import java.nio.ByteBuffer
+import java.nio.channels.ReadableByteChannel
+import java.nio.charset.StandardCharsets
 
 trait TransportUtils {
 
@@ -104,6 +106,47 @@ trait TransportUtils {
 
     String requestKey(byte[] payload) {
         Base64.encoder.encodeToString(payload)
+    }
+
+    /**
+     * Reads only one byte at a time from a given string
+     */
+    static final class SlowByteChannel implements ReadableByteChannel {
+
+        private final ByteBuffer source;
+
+        private SlowByteChannel(String value) {
+            this.source = ByteBuffer.wrap(value.getBytes(StandardCharsets.UTF_8));
+        }
+
+        @Override
+        int read(ByteBuffer dst) {
+            if (!this.source.hasRemaining()) {
+                return -1; // EOF
+            }
+
+            if (!dst.hasRemaining()) {
+                return 0; // no space to write
+            }
+
+            final int toWrite = Math.min(1, this.source.remaining());
+            final int oldLimit = this.source.limit();
+            this.source.limit(this.source.position() + toWrite);
+            dst.put(this.source);
+            this.source.limit(oldLimit);
+
+            return toWrite;
+        }
+
+        @Override
+        boolean isOpen() {
+            return true;
+        }
+
+        @Override
+        void close() {
+            // no-op
+        }
     }
 
 }

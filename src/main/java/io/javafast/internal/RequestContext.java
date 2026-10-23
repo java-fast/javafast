@@ -25,6 +25,7 @@ final class RequestContext implements Context {
 
     private static final byte CR = '\r';
     private static final byte LF = '\n';
+    private static final byte SEMICOLON = ':';
     private static final byte SPACE = ' ';
     private static final byte[] HTTP_1_1_ = "HTTP/1.1 ".getBytes(StandardCharsets.US_ASCII);
     private static final byte[] CONTENT_LENGTH_ = "Content-Length: ".getBytes(StandardCharsets.US_ASCII);
@@ -625,19 +626,26 @@ final class RequestContext implements Context {
         this.writer.writeByte(CR);
         this.writer.writeByte(LF);
         if (this.responseHeaders != null) { // write response headers
-            // TODO write response headers to response
+            this.responseHeaders.forEach((key, value) -> {
+                this.writer.writeAscii(key);
+                this.writer.writeByte(SEMICOLON);
+                this.writer.writeByte(SPACE);
+                this.writer.writeAscii(value);
+                this.writer.writeByte(CR);
+                this.writer.writeByte(LF);
+            });
         }
         if (this.method == HttpMethod.HEAD
             || this.statusCode == 204
             || this.statusCode == 304
-        ) {
+        ) { // empty body cases
             this.writer.writeByte(CR);
             this.writer.writeByte(LF);
-            return; // no body for HEAD
+            return;
         }
         if (this.responseContentLength > -1) {
             this.writer.writeBytes(CONTENT_LENGTH_);
-            this.writer.writeBytes(Integer.toString(this.responseContentLength).getBytes(StandardCharsets.UTF_8));
+            this.writer.writeIntAscii(this.responseContentLength);
             this.writer.writeByte(CR);
             this.writer.writeByte(LF);
         }
