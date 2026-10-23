@@ -37,10 +37,12 @@ public class RouterMatchBenchmark {
     private static final ByteString FILE_NAME = BenchmarkUtils.byteString("/file-records.txt");
 
     private Router router;
+    private RouterState state;
 
     @Setup
     public void setup() {
         this.router = new Router();
+        this.state = new RouterState();
         this.router.add(HttpMethod.GET, "/health", ctx -> {});
         this.router.add(HttpMethod.GET, "/users/{id}", ctx -> {});
         this.router.add(HttpMethod.GET, "/teams/{teamId}/users/{userId}", ctx -> {});
@@ -49,21 +51,21 @@ public class RouterMatchBenchmark {
 
     @Benchmark
     public Object staticRouteMatch() {
-        return this.router.find(HttpMethod.GET, HEALTH);
+        return this.router.find(HttpMethod.GET, this.state, HEALTH);
     }
 
     @Benchmark
     public Object paramRouteMatch() {
-        return this.router.find(HttpMethod.GET, USERS);
+        return this.router.find(HttpMethod.GET, this.state, USERS);
     }
 
     @Benchmark
     public Object nestedParamRouteMatch() {
-        return this.router.find(HttpMethod.GET, TEAM_USER);
+        return this.router.find(HttpMethod.GET, this.state, TEAM_USER);
     }
 
     @Benchmark
     public Object compositeParamRouteMatch() {
-        return this.router.find(HttpMethod.GET, FILE_NAME);
+        return this.router.find(HttpMethod.GET, this.state, FILE_NAME);
     }
 }

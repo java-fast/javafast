@@ -9,12 +9,13 @@ class RouterSpec extends Specification implements TestUtils {
 
     def "should find route by method and capture path params"() {
         given:
-        def router = new Router().with(new RouterState())
+        def router = new Router()
+        def state = new RouterState()
         Handler users = { ctx -> }
         router.add(HttpMethod.GET, "/users/{id}", users, null)
 
         when:
-        def match = router.find(HttpMethod.GET, byteString("/users/1"))
+        def match = router.find(HttpMethod.GET, state, byteString("/users/1"))
 
         then:
         match != null
@@ -22,10 +23,10 @@ class RouterSpec extends Specification implements TestUtils {
         match.patternMatch.params.get("id") == "1"
 
         and:
-        router.find(HttpMethod.POST, byteString("/users/1")) == null
+        router.find(HttpMethod.POST, state, byteString("/users/1")) == null
 
         when:
-        match = router.find(HttpMethod.GET, byteString("/users/2"))
+        match = router.find(HttpMethod.GET, state, byteString("/users/2"))
 
         then:
         match != null
@@ -33,12 +34,12 @@ class RouterSpec extends Specification implements TestUtils {
         match.patternMatch.params.get("id") == "2"
 
         and:
-        router.find(HttpMethod.POST, byteString("/users/2")) == null
+        router.find(HttpMethod.POST, state, byteString("/users/2")) == null
     }
 
     def "should reject duplicate route definition"() {
         given:
-        def router = new Router().with(new RouterState())
+        def router = new Router()
         router.add(HttpMethod.GET, "/users/{id}", { ctx -> }, null)
 
         when:
@@ -50,7 +51,7 @@ class RouterSpec extends Specification implements TestUtils {
 
     def "should throw not found when no route matches in handle"() {
         given:
-        def router = new Router().with(new RouterState())
+        def router = new Router()
         Context ctx = contextOf(HttpMethod.GET, '/missing')
 
         when:
@@ -63,7 +64,7 @@ class RouterSpec extends Specification implements TestUtils {
 
     def "should throw forbidden when access controller denies request"() {
         given:
-        def router = new Router().with(new RouterState())
+        def router = new Router()
         boolean handlerCalled = false
         Handler handler = { ignored -> handlerCalled = true }
         AccessController denyAll = { ignored -> false }
@@ -81,7 +82,7 @@ class RouterSpec extends Specification implements TestUtils {
 
     def "should execute matched handler when route is found and allowed"() {
         given:
-        def router = new Router().with(new RouterState())
+        def router = new Router()
         boolean handlerCalled = false
         Handler handler = { ignored -> handlerCalled = true }
         router.add(HttpMethod.GET, '/users/{id}', handler, null)
@@ -96,22 +97,24 @@ class RouterSpec extends Specification implements TestUtils {
 
     def 'HEAD requests match GET route'() {
         given:
-        def router = new Router().with(new RouterState())
+        def router = new Router()
+        def state = new RouterState()
         router.add(HttpMethod.GET, '/hello') {it.result('hello') }
 
         expect:
-        router.find(HttpMethod.HEAD, byteString('/hello')) != null
+        router.find(HttpMethod.HEAD, state, byteString('/hello')) != null
     }
 
     def 'duplicate explicit HEAD mapping should override'() {
         given:
-        def router = new Router().with(new RouterState())
+        def router = new Router()
+        def state = new RouterState()
         def headContext = contextOf(HttpMethod.HEAD, '/hello')
 
         when:
         router.add(HttpMethod.HEAD, '/hello') { it.result('head') }
         router.add(HttpMethod.HEAD, '/hello') { it.result('another') }
-        router.find(HttpMethod.HEAD, byteString('/hello')).route().handler().handle(headContext)
+        router.find(HttpMethod.HEAD, state, byteString('/hello')).route().handler().handle(headContext)
 
         then:
         noExceptionThrown()
@@ -120,7 +123,7 @@ class RouterSpec extends Specification implements TestUtils {
 
     def 'explicit HEAD mapping should override implicit HEAD mapping regardless of registration order'() {
         given:
-        def router = new Router().with(new RouterState())
+        def router = new Router()
         def headContext = contextOf(HttpMethod.HEAD, '/hello')
         def getContext = contextOf(HttpMethod.GET, '/hello')
 
@@ -137,7 +140,7 @@ class RouterSpec extends Specification implements TestUtils {
         getContext.result() == 'hello'
 
         when: 'adding GET first'
-        router = new Router().with(new RouterState())
+        router = new Router()
         router.add(HttpMethod.GET, '/hello') { it.result('hello') }
         router.add(HttpMethod.HEAD, '/hello') { it.result('head') }
         // execute handlers

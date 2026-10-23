@@ -27,14 +27,18 @@ class ConcurrentRequestSpec extends Specification implements TestUtils {
         requestCount.times { i ->
             pool.submit(() -> {
                 def id = "user-${i}"
-                def response = get("/users/${id}")
-                ac.evaluate { assert true }
-                if (response.statusCode() != 200) {
-                    failures.add("status:${response.statusCode()}")
-                    return
-                }
-                if (response.body() != id) {
-                    failures.add("expected:${id},actual:${response.body()}")
+                try {
+                    def response = get("/users/${id}")
+                    if (response.statusCode() != 200) {
+                        failures.add("status:${response.statusCode()}")
+                    }
+                    if (response.body() != id) {
+                        failures.add("expected:${id},actual:${response.body()}")
+                    }
+                } catch (Throwable t) {
+                    failures.add("exception:${t.class.name}:${t.message}")
+                } finally {
+                    ac.evaluate { assert true }
                 }
             })
         }

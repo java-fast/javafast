@@ -38,14 +38,6 @@ public final class DefaultRouting implements RoutingApi {
         this.router = new Router(ignoreTrailingSlashes, multipleSlashes, caseInsensitive, wrapper);
     }
 
-    /**
-     * Set thread-confined router state
-     */
-    DefaultRouting with(RouterState state) {
-        this.router.with(state);
-        return this;
-    }
-
     @Override
     public <E extends Exception> RoutingApi exception(Class<E> type, ExceptionHandler<? super E> handler) {
         this.exceptions.add(type, handler);
