@@ -464,6 +464,7 @@ final class RequestContext implements Context {
     @Override
     public Context result(String value) {
         this.responseBody = value;
+        // TODO eliminate allocation here
         final byte[] bytes = value.getBytes(StandardCharsets.UTF_8);
         this.responseBodyInputStream = new ByteArrayInputStream(bytes);
         this.responseContentLength = bytes.length;

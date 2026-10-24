@@ -18,7 +18,7 @@ public class RequestDispatcherBenchmark {
         private final HttpRequestSource request = new HttpRequestSource();
         private TransportBuffer buffer;
         private TransportBuffer.Writer writer;
-        private RequestContextPool pool;
+        private RequestContext context;
         private DefaultHttpRequestDispatcher dispatcher;
 
         @Setup(Level.Trial)
@@ -28,9 +28,12 @@ public class RequestDispatcherBenchmark {
             final DefaultRouting routing = new DefaultRouting();
             routing.get("/users/{id}", ctx -> {});
 
-            this.pool = RequestContextPool.create(1);
-            this.dispatcher = new DefaultHttpRequestDispatcher(this.pool, routing, new AppDataManager());
+            final var pool = RequestContextPool.create(1);
+            this.dispatcher = new DefaultHttpRequestDispatcher(pool, routing, new AppDataManager());
             this.writer = this.request.encode(this.buffer, "GET", "/users/42", null, null);
+            final var context = pool.get();
+            pool.release(context);
+            this.context = context; // get context without lock
         }
 
         @TearDown(Level.Trial)
@@ -44,7 +47,7 @@ public class RequestDispatcherBenchmark {
         private final HttpRequestSource request = new HttpRequestSource();
         private TransportBuffer buffer;
         private TransportBuffer.Writer writer;
-        private RequestContextPool pool;
+        private RequestContext context;
         private DefaultHttpRequestDispatcher dispatcher;
 
         @Setup(Level.Trial)
@@ -54,9 +57,12 @@ public class RequestDispatcherBenchmark {
             final DefaultRouting routing = new DefaultRouting();
             routing.get("/file-{name}.txt", ctx -> {});
 
-            this.pool = RequestContextPool.create(1);
-            this.dispatcher = new DefaultHttpRequestDispatcher(this.pool, routing, new AppDataManager());
+            final var pool = RequestContextPool.create(1);
+            this.dispatcher = new DefaultHttpRequestDispatcher(pool, routing, new AppDataManager());
             this.writer = this.request.encode(this.buffer, "GET", "/file-reports.txt", null, null);
+            final var context = pool.get();
+            pool.release(context);
+            this.context = context; // get context without lock
         }
 
         @TearDown(Level.Trial)
@@ -70,7 +76,7 @@ public class RequestDispatcherBenchmark {
         private final HttpRequestSource request = new HttpRequestSource();
         private TransportBuffer buffer;
         private TransportBuffer.Writer writer;
-        private RequestContextPool pool;
+        private RequestContext context;
         private DefaultHttpRequestDispatcher dispatcher;
 
         @Setup(Level.Trial)
@@ -80,12 +86,15 @@ public class RequestDispatcherBenchmark {
             final DefaultRouting routing = new DefaultRouting();
             routing.post("/users", ctx -> {});
 
-            this.pool = RequestContextPool.create(1);
-            this.dispatcher = new DefaultHttpRequestDispatcher(this.pool, routing, new AppDataManager());
+            final var pool = RequestContextPool.create(1);
+            this.dispatcher = new DefaultHttpRequestDispatcher(pool, routing, new AppDataManager());
             this.writer = this.request.encode(
                 this.buffer, "POST", "/users", "{ \"name\":\"JavaFast\" }",
                 Map.of("Content-Type", "application/json", "Content-Length", "21")
             );
+            final var context = pool.get();
+            pool.release(context);
+            this.context = context; // get context without lock
         }
 
         @TearDown(Level.Trial)
@@ -97,19 +106,19 @@ public class RequestDispatcherBenchmark {
     @Benchmark
     public int dispatchGet(GetState state) throws Exception {
         state.dispatcher.dispatch(state.writer);
-        return state.pool.get().statusCode();
+        return state.context.statusCode();
     }
 
     @Benchmark
     public int dispatchGetComposite(GetCompositeState state) throws Exception {
         state.dispatcher.dispatch(state.writer);
-        return state.pool.get().statusCode();
+        return state.context.statusCode();
     }
 
     @Benchmark
     public int dispatchPost(PostState state) throws Exception {
         state.dispatcher.dispatch(state.writer);
-        return state.pool.get().statusCode();
+        return state.context.statusCode();
     }
 
 }

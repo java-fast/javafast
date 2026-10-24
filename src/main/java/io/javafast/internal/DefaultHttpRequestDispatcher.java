@@ -32,7 +32,7 @@ public final class DefaultHttpRequestDispatcher implements RequestDispatcher {
     public void dispatch(TransportBuffer.Writer writer) throws Exception {
         final RequestContext context = this.pool.get();
         try {
-            context.reset(writer, this.appData, this.routing.contextPath); // to handle HttpRequestException
+            context.reset(writer, this.appData, this.routing.contextPath); // to handle http decoder exceptions
             this.routing.handle(context);
         } catch (Throwable throwable) {
             if (!this.routing.handleException(context, throwable)) {
