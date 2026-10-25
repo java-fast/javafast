@@ -46,6 +46,8 @@ public class HttpRequestSource implements TransportTestSource {
             .append(this.path)
             .append(" HTTP/1.1\r\n");
 
+        // add mandatory Host header
+        requestLineAndHeaders.append("Host: localhost\r\n");
         if (this.headers != null) {
             for (var entry : this.headers.entrySet()) {
                 requestLineAndHeaders

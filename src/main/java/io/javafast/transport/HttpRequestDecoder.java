@@ -31,7 +31,7 @@ public class HttpRequestDecoder {
     private static final byte LF = '\n';
     private static final byte SPACE = ' ';
     private static final byte HTAB = '\t';
-    private static final byte SEMICOLON = ':';
+    private static final byte COLON = ':';
 
     private static final String HOST = "host";
     private static final String CONTENT_LENGTH = "content-length";
@@ -186,7 +186,7 @@ public class HttpRequestDecoder {
             }
 
             nameStart = this.reader.position();
-            nameLength = this.reader.indexOf(SEMICOLON);
+            nameLength = this.reader.indexOf(COLON);
             if (nameLength <= 0) { // header name must not be empty
                 throw HttpRequestException.MALFORMED;
             }

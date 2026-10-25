@@ -11,7 +11,7 @@ import java.util.concurrent.TimeUnit;
 @OutputTimeUnit(TimeUnit.NANOSECONDS)
 public class IndexOfBenchmark {
 
-    public static final byte SEMICOLON = (byte) ':';
+    public static final byte COLON = (byte) ':';
 
     private TransportBuffer buffer;
     private TransportBuffer.Reader reader;
@@ -45,7 +45,7 @@ public class IndexOfBenchmark {
     public int indexOf() {
         int pos;
         int sum = 0;
-        while ((pos = this.reader.indexOf(SEMICOLON)) > -1) {
+        while ((pos = this.reader.indexOf(COLON)) > -1) {
             this.reader.skip(pos + 1);
             sum += pos;
         }
@@ -57,7 +57,7 @@ public class IndexOfBenchmark {
     public int indexOfVectorized() {
         int pos;
         int sum = 0;
-        while ((pos = this.readerUseVectors.indexOf(SEMICOLON)) > -1) {
+        while ((pos = this.readerUseVectors.indexOf(COLON)) > -1) {
             this.readerUseVectors.skip(pos + 1);
             sum += pos;
         }

@@ -439,6 +439,39 @@ public final class TransportBuffer implements AutoCloseable {
             }
         }
 
+        /**
+         * Calculates the byte length of a UTF-8 encoded string
+         * @return byte length
+         */
+        public static int utf8Length(String value) {
+            final int end = value.length();
+            int index = 0;
+            int byteLength = 0;
+            while (index < end) {
+                final char first = value.charAt(index++);
+                int codePoint = first;
+                if (Character.isHighSurrogate(first)) {
+                    if (index < end && Character.isLowSurrogate(value.charAt(index))) {
+                        codePoint = Character.toCodePoint(first, value.charAt(index++));
+                    } else {
+                        codePoint = '?';
+                    }
+                } else if (Character.isLowSurrogate(first)) {
+                    codePoint = '?';
+                }
+                if (codePoint <= 0x7F) {
+                    byteLength++;
+                } else if (codePoint <= 0x7FF) {
+                    byteLength += 2;
+                } else if (codePoint <= 0xFFFF) {
+                    byteLength += 3;
+                } else {
+                    byteLength += 4;
+                }
+            }
+            return byteLength;
+        }
+
         private void writeEncodedByte(int value) {
             ensureWritableBlock();
             this.current.payload.set(ValueLayout.JAVA_BYTE, this.currentWritten++, (byte) value);
@@ -621,8 +654,22 @@ public final class TransportBuffer implements AutoCloseable {
          */
         byte getAt(int position);
 
+        /**
+         * Retrieves the ASCII string at the specified position without modifying the cursor
+         *
+         * @param offset the zero-based index of the first byte to retrieve
+         * @param length the number of bytes to retrieve
+         * @return the ASCII string located at the specified position
+         */
         String getAscii(int offset, int length);
 
+        /**
+         * Retrieves the UTF-8 string at the specified position without modifying the cursor
+         *
+         * @param offset the zero-based index of the first byte to retrieve
+         * @param length the number of bytes to retrieve
+         * @return the UTF-8 string located at the specified position
+         */
         String getUtf8(int offset, int length);
 
         void copyTo(int offset, byte[] destination, int destinationOffset, int length);

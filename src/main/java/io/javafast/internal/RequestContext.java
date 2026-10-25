@@ -25,7 +25,7 @@ final class RequestContext implements Context {
 
     private static final byte CR = '\r';
     private static final byte LF = '\n';
-    private static final byte SEMICOLON = ':';
+    private static final byte COLON = ':';
     private static final byte SPACE = ' ';
     private static final byte[] HTTP_1_1_ = "HTTP/1.1 ".getBytes(StandardCharsets.US_ASCII);
     private static final byte[] CONTENT_LENGTH_ = "Content-Length: ".getBytes(StandardCharsets.US_ASCII);
@@ -467,7 +467,7 @@ final class RequestContext implements Context {
         this.responseBody = value;
         this.responseBodyBytes = null;
         this.responseBodyInputStream = null;
-        this.responseContentLength = -1; // will be set while writing
+        this.responseContentLength = TransportBuffer.Writer.utf8Length(value);
         return this;
     }
 
@@ -630,7 +630,7 @@ final class RequestContext implements Context {
         if (this.responseHeaders != null) { // write response headers
             this.responseHeaders.forEach((key, value) -> {
                 this.writer.writeAscii(key);
-                this.writer.writeByte(SEMICOLON);
+                this.writer.writeByte(COLON);
                 this.writer.writeByte(SPACE);
                 this.writer.writeAscii(value);
                 this.writer.writeByte(CR);
@@ -650,13 +650,17 @@ final class RequestContext implements Context {
             this.writer.writeIntAscii(this.responseContentLength);
             this.writer.writeByte(CR);
             this.writer.writeByte(LF);
+        } else {
+            // TODO write chunked
         }
         this.writer.writeByte(CR);
         this.writer.writeByte(LF);
         if (this.responseBody != null) {
             this.writer.writeUtf8(this.responseBody);
         }
-
+        if (this.responseBodyBytes != null) {
+            this.writer.writeBytes(this.responseBodyBytes);
+        }
         final InputStream stream;
         if ((stream = resultInputStream()) != null) {
             try (stream; final var out = this.responseBodyOutputStream) {

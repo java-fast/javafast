@@ -102,10 +102,18 @@ class TransportBufferWriterSpec extends Specification implements TransportUtils 
 
         when:
         writer.writeUtf8(value)
-
         then:
         writer.totalWritten() == value.getBytes("UTF-8").length
         readAll(writer) == value.getBytes("UTF-8")
+
+        when:
+        useBlocks(1)
+        writer = buffer.writer()
+        value = "\u0000\u007F\u0080\u0800"
+        writer.writeUtf8(value)
+        then:
+        writer.totalWritten() == value.getBytes("UTF-8").length
+        writer.reader().getUtf8(0, writer.totalWritten()) == value
     }
 
     def "writeUtf8 handles UTF-16 ranges and block boundaries"() {
@@ -131,7 +139,35 @@ class TransportBufferWriterSpec extends Specification implements TransportUtils 
         writer.writeUtf8(value)
 
         then:
+        writer.totalWritten() == 4
         readAll(writer) == value.getBytes("UTF-8")
+        writer.reader().getUtf8(0, 4) == "a?b?"
+    }
+
+    def "writeUtf8 should handle invalid ranges"() {
+        given:
+        def writer = buffer.writer()
+
+        when: 'empty string range'
+        writer.writeUtf8("Hello", 5, 0)
+        then: 'no bytes written'
+        writer.totalWritten() == 0
+
+        when: 'out of index'
+        writer.writeUtf8("Hello", 6, 0)
+        then: 'throws exception'
+        thrown(IndexOutOfBoundsException)
+    }
+
+    def "utf8length calculates byte count correctly"() {
+        expect:
+        TransportBuffer.Writer.utf8Length(text) == text.getBytes("UTF-8").length
+        where:
+        text << [
+          "A héllo € 你好 😀",
+          "a\uD800b\uDC00",
+          "\u0000\u007F\u0080\u0800"
+        ]
     }
 
     def "writeBytes and writeByte can be mixed across a block boundary"() {
