@@ -95,6 +95,45 @@ class TransportBufferWriterSpec extends Specification implements TransportUtils 
         readAll(writer) == expected
     }
 
+    def "writeUtf8 encodes Unicode without treating chars as bytes"() {
+        given:
+        def writer = buffer.writer()
+        def value = "A héllo € 你好 😀"
+
+        when:
+        writer.writeUtf8(value)
+
+        then:
+        writer.totalWritten() == value.getBytes("UTF-8").length
+        readAll(writer) == value.getBytes("UTF-8")
+    }
+
+    def "writeUtf8 handles UTF-16 ranges and block boundaries"() {
+        given:
+        useBlocks(2)
+        def writer = buffer.writer()
+        def value = ("a" * (PAYLOAD_SIZE - 1)) + "€"
+
+        when:
+        writer.writeUtf8(value, 0, value.length())
+
+        then:
+        writer.totalWritten() == value.getBytes("UTF-8").length
+        readAll(writer) == value.getBytes("UTF-8")
+    }
+
+    def "writeUtf8 replaces an unpaired surrogate like the standard UTF-8 encoder"() {
+        given:
+        def writer = buffer.writer()
+        def value = "a\uD800b\uDC00"
+
+        when:
+        writer.writeUtf8(value)
+
+        then:
+        readAll(writer) == value.getBytes("UTF-8")
+    }
+
     def "writeBytes and writeByte can be mixed across a block boundary"() {
         given:
         def writer = buffer.writer()

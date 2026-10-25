@@ -50,6 +50,7 @@ final class RequestContext implements Context {
     private int statusCode = HttpStatus.OK.code();
     private Map<String, String> responseHeaders;
     private String responseBody;
+    private byte[] responseBodyBytes;
     private InputStream responseBodyInputStream;
     private int responseContentLength;
     private final TransportBufferOutputStream responseBodyOutputStream = new TransportBufferOutputStream();
@@ -257,14 +258,14 @@ final class RequestContext implements Context {
     @Override
     public <T> T bodyStreamAsClass(Type type) {
         ensureRequestReadable();
-        // TODO how?
+        // TODO json mapping to the type
         return null;
     }
 
     @Override
     public InputStream bodyInputStream() {
         ensureRequestReadable();
-        // TODO TransportBufferInputStream?
+        // TODO request body input stream, maybe TransportBufferInputStream?
         return null;
     }
 
@@ -464,17 +465,17 @@ final class RequestContext implements Context {
     @Override
     public Context result(String value) {
         this.responseBody = value;
-        // TODO eliminate allocation here
-        final byte[] bytes = value.getBytes(StandardCharsets.UTF_8);
-        this.responseBodyInputStream = new ByteArrayInputStream(bytes);
-        this.responseContentLength = bytes.length;
+        this.responseBodyBytes = null;
+        this.responseBodyInputStream = null;
+        this.responseContentLength = -1; // will be set while writing
         return this;
     }
 
     @Override
     public Context result(byte[] bytes) {
         this.responseBody = null;
-        this.responseBodyInputStream = new ByteArrayInputStream(bytes);
+        this.responseBodyBytes = bytes; // unsafe, no copy
+        this.responseBodyInputStream = null;
         this.responseContentLength = bytes.length;
         return this;
     }
@@ -482,9 +483,9 @@ final class RequestContext implements Context {
     @Override
     public Context result(InputStream stream) {
         this.responseBody = null;
+        this.responseBodyBytes = null;
         this.responseBodyInputStream = stream;
-        // TODO how to calculate contentLength?
-        this.responseContentLength = -1;
+        this.responseContentLength = -1; // will be set while writing
         return this;
     }
 
@@ -501,7 +502,7 @@ final class RequestContext implements Context {
     @Override
     public Context contentType(String contentType) {
         if (this.responseHeaders == null) {
-            this.responseHeaders = new HashMap<>();
+            this.responseHeaders = new HashMap<>(); // TODO a custom faster map
         }
         this.responseHeaders.put("Content-Type", contentType);
         return null;
@@ -652,6 +653,10 @@ final class RequestContext implements Context {
         }
         this.writer.writeByte(CR);
         this.writer.writeByte(LF);
+        if (this.responseBody != null) {
+            this.writer.writeUtf8(this.responseBody);
+        }
+
         final InputStream stream;
         if ((stream = resultInputStream()) != null) {
             try (stream; final var out = this.responseBodyOutputStream) {

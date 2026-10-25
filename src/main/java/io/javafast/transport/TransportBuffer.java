@@ -398,6 +398,53 @@ public final class TransportBuffer implements AutoCloseable {
             }
         }
 
+        public void writeUtf8(String value) {
+            writeUtf8(value, 0, value.length());
+        }
+
+        public void writeUtf8(String value, int offset, int length) {
+            Objects.checkFromIndexSize(offset, length, value.length());
+            ensureHead();
+            final int end = offset + length;
+            int sourceOffset = offset;
+            while (sourceOffset < end) {
+                final char first = value.charAt(sourceOffset++);
+                int codePoint = first;
+
+                if (Character.isHighSurrogate(first)) {
+                    if (sourceOffset < end && Character.isLowSurrogate(value.charAt(sourceOffset))) {
+                        codePoint = Character.toCodePoint(first, value.charAt(sourceOffset++));
+                    } else {
+                        codePoint = '?';
+                    }
+                } else if (Character.isLowSurrogate(first)) {
+                    codePoint = '?';
+                }
+
+                if (codePoint <= 0x7F) {
+                    writeEncodedByte(codePoint);
+                } else if (codePoint <= 0x7FF) {
+                    writeEncodedByte(0xC0 | (codePoint >>> 6));
+                    writeEncodedByte(0x80 | (codePoint & 0x3F));
+                } else if (codePoint <= 0xFFFF) {
+                    writeEncodedByte(0xE0 | (codePoint >>> 12));
+                    writeEncodedByte(0x80 | ((codePoint >>> 6) & 0x3F));
+                    writeEncodedByte(0x80 | (codePoint & 0x3F));
+                } else {
+                    writeEncodedByte(0xF0 | (codePoint >>> 18));
+                    writeEncodedByte(0x80 | ((codePoint >>> 12) & 0x3F));
+                    writeEncodedByte(0x80 | ((codePoint >>> 6) & 0x3F));
+                    writeEncodedByte(0x80 | (codePoint & 0x3F));
+                }
+            }
+        }
+
+        private void writeEncodedByte(int value) {
+            ensureWritableBlock();
+            this.current.payload.set(ValueLayout.JAVA_BYTE, this.currentWritten++, (byte) value);
+            this.totalWritten++;
+        }
+
         public void release() {
             this.head.release();
         }
