@@ -1,5 +1,7 @@
 package io.javafast.transport;
 
+import io.javafast.http.HttpRequestException;
+
 public final class HttpProtocolHandler implements ProtocolHandler {
 
     private static final int MAX_REQUEST_SIZE = Integer.getInteger("javafast.max.request.size", 10 * (1 << 20)); // aka 10MB

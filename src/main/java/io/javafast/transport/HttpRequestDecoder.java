@@ -1,6 +1,7 @@
 package io.javafast.transport;
 
 import io.javafast.http.HttpMethod;
+import io.javafast.http.HttpRequestException;
 import io.javafast.internal.ByteString;
 import io.javafast.util.HostValidator;
 

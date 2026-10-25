@@ -1,6 +1,7 @@
 package io.javafast.transport
 
 import io.javafast.http.HttpMethod
+import io.javafast.http.HttpRequestException
 import io.javafast.test.TestUtils
 import spock.lang.Specification
 

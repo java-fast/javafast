@@ -34,7 +34,7 @@ final class Router {
 
         final RouteMatch match = find(ctx.method(), state, path);
         if (match == null) {
-            throw HttpResponseException.notFound(ctx.method(), path.toString());
+            throw HttpResponseException.NOT_FOUND;
         }
 
         this.registry.findAll(state, HandlerPhase.BEFORE_MATCHED, path, m -> {
@@ -93,7 +93,7 @@ final class Router {
         if (controller != null) { // add a preconfigured BEFORE_MATCHED to run the given AccessController
             this.registry.add(HandlerPhase.BEFORE_MATCHED, path, ctx -> {
                 if (!controller.isAllowed(ctx)) {
-                    throw new HttpResponseException(HttpStatus.FORBIDDEN);
+                    throw HttpResponseException.FORBIDDEN;
                 }
             });
         }

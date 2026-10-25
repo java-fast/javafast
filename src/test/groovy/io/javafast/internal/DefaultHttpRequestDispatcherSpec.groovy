@@ -91,7 +91,7 @@ class DefaultHttpRequestDispatcherSpec extends Specification implements TestUtil
         verifyAll(requestPool.get()) {
             statusCode == HttpStatus.NOT_FOUND.code()
             path() == '/missing'
-            result() == 'Endpoint GET /missing not found'
+            result() == ''
         }
     }
 

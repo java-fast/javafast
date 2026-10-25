@@ -1,4 +1,4 @@
-package io.javafast.transport;
+package io.javafast.http;
 
 public class HttpRequestException extends RuntimeException {
 

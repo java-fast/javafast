@@ -3,7 +3,7 @@ package io.javafast.internal;
 import io.javafast.http.Context;
 import io.javafast.http.ExceptionHandler;
 import io.javafast.http.HttpResponseException;
-import io.javafast.transport.HttpRequestException;
+import io.javafast.http.HttpRequestException;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -19,11 +19,15 @@ final class ExceptionMapper {
     ExceptionMapper() {
         add(HttpRequestException.class, (HttpRequestException e, Context context) -> {
             context.status(e.status());
-            if (e.getMessage() != null) context.result(e.getMessage());
+            context.result(""); // set Content-Length: 0
         });
         add(HttpResponseException.class, (HttpResponseException e, Context context) -> {
             context.status(e.status());
-            if (e.getMessage() != null) context.result(e.getMessage());
+            if (e.getMessage() != null) {
+                context.result(e.getMessage());
+            } else {
+                context.result(""); // set Content-Length: 0
+            }
         });
         add(SkipHandlersException.class, (SkipHandlersException _, Context _) -> {
             // do nothing

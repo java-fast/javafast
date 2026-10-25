@@ -35,7 +35,7 @@ class BeforeAfterSpec extends Specification implements TestUtils {
         expect:
         verifyAll(get('/other')) {
             statusCode() == 404
-            body() == 'Endpoint GET /other not found!'
+            body() == '!'
         }
         verifyAll(get('/hello')) {
             statusCode() == 200
@@ -72,7 +72,7 @@ class BeforeAfterSpec extends Specification implements TestUtils {
         expect:
         verifyAll(get('/other')) {
             statusCode() == 404
-            body() == 'Endpoint GET /other not found'
+            body() == ''
             headers().firstValue('X-Always').get() == 'true'
             headers().firstValue('X-Before-Star').isEmpty()
             headers().firstValue('X-After-Star').isEmpty()
@@ -91,7 +91,7 @@ class BeforeAfterSpec extends Specification implements TestUtils {
         expect:
         verifyAll(get('/sub/id/fake')) {
             statusCode() == 404
-            body() == 'Endpoint GET /sub/id/fake not found'
+            body() == ''
             headers().firstValue('X-Always').get() == 'true'
             headers().firstValue('X-Before-Star').isEmpty()
             headers().firstValue('X-After-Star').isEmpty()
@@ -110,7 +110,7 @@ class BeforeAfterSpec extends Specification implements TestUtils {
         expect:
         verifyAll(get('/angle/i/see/nothing')) {
             statusCode() == 404
-            body() == 'Endpoint GET /angle/i/see/nothing not found'
+            body() == ''
             headers().firstValue('X-Always').get() == 'true'
             headers().firstValue('X-Before-Star').isEmpty()
             headers().firstValue('X-After-Star').isEmpty()
@@ -170,7 +170,7 @@ class BeforeAfterSpec extends Specification implements TestUtils {
         expect:
         verifyAll(get('/other-path')) {
             statusCode() == 404
-            body() == 'Endpoint GET /other-path not found'
+            body() == ''
         }
         verifyAll(get('/hello')) {
             statusCode() == 200

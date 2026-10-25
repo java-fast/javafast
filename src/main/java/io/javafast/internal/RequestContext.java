@@ -9,11 +9,15 @@ import io.javafast.transport.TransportBuffer;
 import io.javafast.validation.BodyValidator;
 import io.javafast.validation.Validator;
 
-import java.io.*;
+import java.io.InputStream;
+import java.io.OutputStream;
 import java.lang.reflect.Type;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
-import java.util.*;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Function;
 import java.util.stream.Stream;
@@ -111,7 +115,9 @@ final class RequestContext implements Context {
         this.pathParamMap = null;
         this.requestHeaders = null;
         this.responseBody = null;
+        this.responseBodyBytes = null;
         this.responseBodyInputStream = null;
+        this.responseContentLength = -1;
         this.responseHeaders = null;
 
         this.reader.reset();
@@ -501,15 +507,14 @@ final class RequestContext implements Context {
 
     @Override
     public Context contentType(String contentType) {
-        if (this.responseHeaders == null) {
-            this.responseHeaders = new HashMap<>(); // TODO a custom faster map
-        }
-        this.responseHeaders.put("Content-Type", contentType);
-        return null;
+        return header("Content-Type", contentType);
     }
 
     @Override
     public Context header(String name, String value) {
+        if (name.indexOf('\r') >= 0 || name.indexOf('\n') >= 0 || value.indexOf('\r') >= 0 || value.indexOf('\n') >= 0) {
+            throw new IllegalArgumentException("Invalid HTTP header");
+        }
         if (this.responseHeaders == null) {
             this.responseHeaders = new HashMap<>();
         }
@@ -520,11 +525,7 @@ final class RequestContext implements Context {
     @Override
     public Context addHeader(String name, String value) {
         // TODO handle multi-value headers?
-        if (this.responseHeaders == null) {
-            this.responseHeaders = new HashMap<>();
-        }
-        this.responseHeaders.put(name, value);
-        return this;
+        return header(name, value);
     }
 
     @Override
