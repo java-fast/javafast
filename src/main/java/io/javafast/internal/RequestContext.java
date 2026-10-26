@@ -145,11 +145,11 @@ final class RequestContext implements Context {
     @Override
     public String path() {
         if (this.path == null) {
-            final int index = getTarget().indexOf('?');
+            final int index = target().indexOf('?');
             if (index == -1) {
-                this.path = getTarget().toString();
+                this.path = target().toString();
             } else {
-                this.path = getTarget().substring(0, index);
+                this.path = target().substring(0, index);
             }
         }
         return this.path;
@@ -210,11 +210,11 @@ final class RequestContext implements Context {
     @Override
     public String queryString() {
         if (this.queryString == null) {
-            final int index = getTarget().indexOf('?');
+            final int index = target().indexOf('?');
             if (index == -1) {
                 this.queryString = "";
             } else {
-                this.queryString = getTarget().substring(index + 1, getTarget().length());
+                this.queryString = target().substring(index + 1, target().length());
             }
         }
         return this.queryString;
@@ -604,7 +604,7 @@ final class RequestContext implements Context {
         return this;
     }
 
-    ByteString getTarget() {
+    ByteString target() {
         return this.decoder.getTarget();
     }
 
