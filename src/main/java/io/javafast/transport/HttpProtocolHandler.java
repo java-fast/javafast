@@ -4,9 +4,9 @@ import io.javafast.http.HttpRequestException;
 
 public final class HttpProtocolHandler implements ProtocolHandler {
 
-    private static final int MAX_REQUEST_SIZE = Integer.getInteger("javafast.max.request.size", 10 * (1 << 20)); // aka 10MB
+    private static final int MAX_REQUEST_SIZE = Integer.getInteger("javafast.max.request.size", 1 << 22); // aka 4MB
     private static final int MAX_HEADER_SIZE = Integer.getInteger("javafast.max.request.header.size", 1 << 13); // aka 8KB
-    private static final int MAX_BODY_SIZE = Integer.getInteger("javafast.max.request.body.size", 1 << 23); // aka 8MB
+    private static final int MAX_BODY_SIZE = Integer.getInteger("javafast.max.request.body.size", 1 << 20); // aka 1MB
 
     private static final byte CR = '\r';
     private static final byte LF = '\n';

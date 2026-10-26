@@ -2,12 +2,17 @@ package io.javafast;
 
 import io.javafast.config.JavaFastConfig;
 import io.javafast.config.JavaFastState;
+import io.javafast.transport.JdkHttpTransport;
 import io.javafast.transport.Transport;
+import io.javafast.transport.TransportBuffer;
 import io.javafast.transport.TransportConfig;
 
 import java.util.function.Consumer;
 
 public class JavaFast {
+
+    private static final int TRANSPORT_BUFFER_BLOCK_SIZE = Integer.getInteger("javafast.transport.buffer.block.size", 1024);
+    private static final int TRANSPORT_BUFFER_BLOCK_COUNT = Integer.getInteger("javafast.transport.buffer.block.count", 16_384);
 
     private final JavaFastState state;
 
@@ -39,6 +44,9 @@ public class JavaFast {
      */
     public static JavaFast create(Consumer<JavaFastConfig> config) {
         final JavaFastState state = new JavaFastState();
+        state.transport.factory(() -> new JdkHttpTransport(
+            TransportBuffer.create(TRANSPORT_BUFFER_BLOCK_SIZE, TRANSPORT_BUFFER_BLOCK_COUNT))
+        );
         final JavaFastConfig jfc = new JavaFastConfig(state);
         config.accept(jfc);
         jfc.init(); // lazy init to finalize config changes
