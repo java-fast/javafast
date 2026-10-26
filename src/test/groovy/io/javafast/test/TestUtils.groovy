@@ -193,7 +193,7 @@ trait TestUtils implements Logger {
     Context contextOf(HttpMethod method, String uri) {
         def ctx = new RequestContext()
         ctx.method = method
-        ctx.target.reset(reader(uri), 0, uri.length())
+        ctx.target().reset(reader(uri), 0, uri.length())
         return ctx
     }
 
