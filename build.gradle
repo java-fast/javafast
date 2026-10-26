@@ -45,9 +45,15 @@ test {
         showStandardStreams = true
     }
     finalizedBy jacocoTestReport
+
+    def useVectors = Boolean.getBoolean('javafast.vectorized.reader')
     // set test properties
     systemProperty 'test.logger', System.getProperty('test.logger', 'true')
-    jvmArgs '--add-modules', 'jdk.incubator.vector'
+    systemProperty 'javafast.vectorized.reader', useVectors
+    if(useVectors) {
+        jvmArgs '--add-modules', 'jdk.incubator.vector'
+    }
+    println("using vectors: ${useVectors}")
 }
 
 jacocoTestReport {
