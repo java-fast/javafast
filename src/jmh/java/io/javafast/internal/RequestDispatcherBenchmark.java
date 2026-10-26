@@ -6,6 +6,25 @@ import org.openjdk.jmh.annotations.*;
 
 import java.util.concurrent.TimeUnit;
 
+/**
+ * Benchmark                                                            Mode  Cnt    Score    Error   Units
+ * RequestDispatcherBenchmark.dispatchGet                               avgt    5  119.969 ±  0.345   ns/op
+ * RequestDispatcherBenchmark.dispatchGet:·gc.alloc.rate                avgt    5   ≈ 10⁻⁴           MB/sec
+ * RequestDispatcherBenchmark.dispatchGet:·gc.alloc.rate.norm           avgt    5   ≈ 10⁻⁵             B/op
+ * RequestDispatcherBenchmark.dispatchGet:·gc.count                     avgt    5      ≈ 0           counts
+ * RequestDispatcherBenchmark.dispatchGetComposite                      avgt    5  151.626 ±  6.471   ns/op
+ * RequestDispatcherBenchmark.dispatchGetComposite:·gc.alloc.rate       avgt    5   ≈ 10⁻⁴           MB/sec
+ * RequestDispatcherBenchmark.dispatchGetComposite:·gc.alloc.rate.norm  avgt    5   ≈ 10⁻⁵             B/op
+ * RequestDispatcherBenchmark.dispatchGetComposite:·gc.count            avgt    5      ≈ 0           counts
+ * RequestDispatcherBenchmark.dispatchNotFound                          avgt    5  260.093 ±  2.379   ns/op
+ * RequestDispatcherBenchmark.dispatchNotFound:·gc.alloc.rate           avgt    5   ≈ 10⁻⁴           MB/sec
+ * RequestDispatcherBenchmark.dispatchNotFound:·gc.alloc.rate.norm      avgt    5   ≈ 10⁻⁵             B/op
+ * RequestDispatcherBenchmark.dispatchNotFound:·gc.count                avgt    5      ≈ 0           counts
+ * RequestDispatcherBenchmark.dispatchPost                              avgt    5  211.966 ±  0.689   ns/op
+ * RequestDispatcherBenchmark.dispatchPost:·gc.alloc.rate               avgt    5   ≈ 10⁻⁴           MB/sec
+ * RequestDispatcherBenchmark.dispatchPost:·gc.alloc.rate.norm          avgt    5   ≈ 10⁻⁵             B/op
+ * RequestDispatcherBenchmark.dispatchPost:·gc.count                    avgt    5      ≈ 0           counts
+ */
 @State(Scope.Thread)
 @BenchmarkMode(Mode.AverageTime)
 @OutputTimeUnit(TimeUnit.NANOSECONDS)
