@@ -3,6 +3,7 @@ plugins {
     id 'groovy'
     id 'jacoco'
     id 'me.champeau.jmh' version '0.7.3'
+    id 'maven-publish'
 }
 
 group = 'io.javafast'
@@ -10,6 +11,18 @@ version = '1.0.0-SNAPSHOT'
 
 repositories {
     mavenCentral()
+}
+
+java {
+    withSourcesJar()
+}
+
+publishing {
+    publications {
+        mavenJava(MavenPublication) {
+            from components.java
+        }
+    }
 }
 
 dependencies {
