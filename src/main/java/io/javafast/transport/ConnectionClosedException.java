@@ -2,13 +2,23 @@ package io.javafast.transport;
 
 import java.io.IOException;
 
-public class ConnectionClosedException extends IOException {
+class ConnectionClosedException extends IOException {
 
-    public ConnectionClosedException() {
+    private static final ConnectionClosedException INSTANCE = new ConnectionClosedException();
+
+    private ConnectionClosedException() {
     }
 
-    public ConnectionClosedException(Throwable cause) {
+    private ConnectionClosedException(Throwable cause) {
         super(cause);
+    }
+
+    static ConnectionClosedException get() {
+        return INSTANCE;
+    }
+
+    static ConnectionClosedException get(Throwable cause) {
+        return new ConnectionClosedException(cause);
     }
 
 }

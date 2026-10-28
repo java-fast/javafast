@@ -14,10 +14,7 @@ import java.io.OutputStream;
 import java.lang.reflect.Type;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Function;
 import java.util.stream.Stream;
@@ -52,7 +49,7 @@ final class RequestContext implements Context {
     private Map<String, String> requestHeaders;
 
     private int statusCode = HttpStatus.OK.code();
-    private Map<String, String> responseHeaders;
+    private final StringMap responseHeaders = new StringMap(8);
     private String responseBody;
     private byte[] responseBodyBytes;
     private InputStream responseBodyInputStream;
@@ -73,7 +70,7 @@ final class RequestContext implements Context {
         if (count == 0) return null;
         for (int i = 0; i < count; i++) {
             if (this.decoder.matchHeaderName(i, header)) {
-                if (this.requestHeaders != null) {
+                if (this.requestHeaders == null) {
                     this.requestHeaders = new HashMap<>();
                 }
                 final String value = this.decoder.getHeader(i);
@@ -118,7 +115,7 @@ final class RequestContext implements Context {
         this.responseBodyBytes = null;
         this.responseBodyInputStream = null;
         this.responseContentLength = -1;
-        this.responseHeaders = null;
+        this.responseHeaders.clear();
 
         this.reader.reset();
         this.decoder.parse(this.reader);
@@ -397,7 +394,7 @@ final class RequestContext implements Context {
 
     @Override
     public Map<String, String> headerMap() {
-        return Map.copyOf(getHeaders()); // copy protection
+        return Map.copyOf(getHeaders()); // unmodifiable copy protection
     }
 
     @Override
@@ -512,11 +509,10 @@ final class RequestContext implements Context {
 
     @Override
     public Context header(String name, String value) {
+        Objects.requireNonNull(name, "name");
+        Objects.requireNonNull(value, "value");
         if (name.indexOf('\r') >= 0 || name.indexOf('\n') >= 0 || value.indexOf('\r') >= 0 || value.indexOf('\n') >= 0) {
             throw new IllegalArgumentException("Invalid HTTP header");
-        }
-        if (this.responseHeaders == null) {
-            this.responseHeaders = new HashMap<>();
         }
         this.responseHeaders.put(name, value);
         return this;
@@ -530,9 +526,7 @@ final class RequestContext implements Context {
 
     @Override
     public Context removeHeader(String name) {
-        if (this.responseHeaders != null) {
-            this.responseHeaders.remove(name);
-        }
+        this.responseHeaders.remove(name);
         return this;
     }
 
@@ -628,15 +622,15 @@ final class RequestContext implements Context {
         this.writer.writeBytes(status().getWireBytes());
         this.writer.writeByte(CR);
         this.writer.writeByte(LF);
-        if (this.responseHeaders != null) { // write response headers
-            this.responseHeaders.forEach((key, value) -> {
-                this.writer.writeAscii(key);
-                this.writer.writeByte(COLON);
-                this.writer.writeByte(SPACE);
-                this.writer.writeAscii(value);
-                this.writer.writeByte(CR);
-                this.writer.writeByte(LF);
-            });
+        for (int i = 0, size = this.responseHeaders.size(); i < size; i++) {
+            final String key = this.responseHeaders.keyAt(i);
+            final String value = this.responseHeaders.valueAt(i);
+            this.writer.writeAscii(key);
+            this.writer.writeByte(COLON);
+            this.writer.writeByte(SPACE);
+            this.writer.writeAscii(value);
+            this.writer.writeByte(CR);
+            this.writer.writeByte(LF);
         }
         if (this.method == HttpMethod.HEAD
             || this.statusCode == 204

@@ -23,6 +23,7 @@ final class SocketSelector implements Runnable {
     private static final Logger log = Logger.getLogger(SocketSelector.class.getName());
 
     private static final long READ_TIMEOUT_NANOS = Long.getLong("javafast.read.timeout.nanos", 30_000_000_000L); // default 30 seconds
+    private static final long TIMEOUT_SCAN_INTERVAL_NANOS = 1_000_000_000L; // min socket read timeout is 1 second
 
     private volatile boolean running = true;
 
@@ -61,10 +62,11 @@ final class SocketSelector implements Runnable {
     @Override
     public void run() {
         try {
+            long nextTimeoutScan = System.nanoTime() + TIMEOUT_SCAN_INTERVAL_NANOS;
             while (this.running && !Thread.currentThread().isInterrupted()) {
                 registerPendingConnections();
                 long now = System.nanoTime();
-                final long timeout = computeSelectTimeout(now);
+                final long timeout = computeSelectTimeout(now, nextTimeoutScan);
                 final int ready;
                 if (timeout == 0) {
                     ready = this.selector.selectNow();
@@ -77,7 +79,10 @@ final class SocketSelector implements Runnable {
                     processSelectedKeys(now);
                 }
                 processWritableSockets();
-                checkSocketReadTimeouts(now);
+                if (now - nextTimeoutScan >= 0) {
+                    checkSocketReadTimeouts(now);
+                    nextTimeoutScan = now + TIMEOUT_SCAN_INTERVAL_NANOS;
+                }
             }
         } catch (Exception e) {
             throw new RuntimeException("Selector failed", e);
@@ -142,7 +147,7 @@ final class SocketSelector implements Runnable {
                 dispatch(conn);
             }
         } catch (IOException _) {
-            close(conn);
+            closeAndRemove(conn);
         }
     }
 
@@ -163,10 +168,9 @@ final class SocketSelector implements Runnable {
                     reader.close(); // release blocks
                     conn.response = null;
                     conn.responseBuffer.update(sequence, ResponseBuffer.SlotState.FREE);
-                    continue;
                 }
             } catch (IOException _) {
-                close(conn);
+                closeAndRemove(conn);
                 return;
             }
         }
@@ -175,19 +179,18 @@ final class SocketSelector implements Runnable {
     private void dispatch(SocketConnection conn) {
         final long sequence = conn.publishedSequence;
         final TransportBuffer.Writer writer = conn.published;
-        Thread.ofVirtual().start(() -> {
-            try {
-                this.requestDispatcher.dispatch(writer);
-            } catch (Exception e) {
-                log.log(Level.SEVERE, e.getMessage(), e);
-                this.errors.offer(conn); // TODO update and release later
-            } finally {
-                if (conn.responseBuffer.update(sequence, ResponseBuffer.SlotState.READY)) {
-                    this.writableSockets.offer(conn);
-                    this.selector.wakeup();
-                }
+        // FIXME: run in VT!
+        try {
+            this.requestDispatcher.dispatch(writer);
+        } catch (Exception e) {
+            log.log(Level.SEVERE, e.getMessage(), e);
+            this.errors.offer(conn); // TODO update and release later
+        } finally {
+            if (conn.responseBuffer.update(sequence, ResponseBuffer.SlotState.READY)) {
+                this.writableSockets.offer(conn);
+                this.selector.wakeup();
             }
-        });
+        }
     }
 
     private void checkSocketReadTimeouts(long now) {
@@ -205,16 +208,13 @@ final class SocketSelector implements Runnable {
         }
     }
 
-    private long computeSelectTimeout(long now) {
-        long timeoutNanos = READ_TIMEOUT_NANOS;
-        for (SocketConnection connection : this.connections.values()) {
-            final long remaining = READ_TIMEOUT_NANOS - (now - connection.lastReadNanos);
-            if (remaining < timeoutNanos) {
-                timeoutNanos = Math.max(remaining, 0);
-            }
+    private long computeSelectTimeout(long now, long nextTimeoutScan) {
+        if (this.connections.isEmpty()) {
+            return READ_TIMEOUT_NANOS / 1_000_000L;
         }
+        final long timeoutNanos = Math.max(0L, nextTimeoutScan - now);
         // round up
-        return (timeoutNanos == 0) ? 0 : ((timeoutNanos + 999_999) / 1_000_000);
+        return (timeoutNanos == 0) ? 0 : ((timeoutNanos + 999_999L) / 1_000_000L);
     }
 
     void shutdown() {
@@ -225,6 +225,11 @@ final class SocketSelector implements Runnable {
     private void close(SocketConnection connection) {
         connection.key.cancel();
         connection.close();
+    }
+
+    private void closeAndRemove(SocketConnection connection) {
+        this.connections.remove(connection.key.channel());
+        close(connection);
     }
 
     private void closeQuietly(SocketChannel socket) {

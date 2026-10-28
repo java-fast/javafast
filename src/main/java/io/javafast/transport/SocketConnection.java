@@ -47,11 +47,11 @@ final class SocketConnection {
                 written = this.writer.read(this.channel);
             } catch (BufferOverflowException e) {
                 discard();
-                throw new ConnectionClosedException(e);
+                throw ConnectionClosedException.get(e);
             }
             if (written == -1) {
                 discard();
-                throw new ConnectionClosedException();
+                throw ConnectionClosedException.get();
             }
             if (written == 0) {
                 break;
