@@ -8,7 +8,7 @@ import java.nio.BufferOverflowException
 class TransportBufferWriterSpec extends Specification implements TransportUtils {
 
     private static final int BLOCK_SIZE = 64
-    private static final int PAYLOAD_SIZE = BLOCK_SIZE - 8
+    private static final int PAYLOAD_SIZE = BLOCK_SIZE - 12
 
     private TransportBuffer buffer
 

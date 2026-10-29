@@ -137,7 +137,7 @@ class TransportBufferConcurrencySpec extends Specification implements TransportU
         given:
         def buffer = TransportBuffer.create(64, 64)
         def producerCount = 10
-        def payloadLength = 160
+        def payloadLength = 155 // 52 + 52 + 51
         def ac = new AsyncConditions(producerCount)
         def pool = Executors.newFixedThreadPool(10)
         def heads = new CopyOnWriteArrayList<TransportBuffer.Block>()
@@ -156,7 +156,10 @@ class TransportBufferConcurrencySpec extends Specification implements TransportU
 
         then:
         heads.size() == producerCount
-        heads.every { chain(buffer, it).size() == 3 }
+        heads.every {
+            println(chain(buffer, it).size())
+            chain(buffer, it).size() == 3
+        }
 
         cleanup:
         buffer.close()

@@ -24,7 +24,7 @@ trait TransportUtils {
         def bytes = new byte[expectedLength]
         def offset = 0
         def current = head.index
-        while (current != TransportBuffer.NEXT_NONE && offset < expectedLength) {
+        while (current != TransportBuffer.EMPTY_LINK && offset < expectedLength) {
             def remaining = expectedLength - offset
             def payload = buffer.blocks[current].payload()
             def readSize = Math.min((int) payload.byteSize(), remaining)
@@ -49,12 +49,12 @@ trait TransportUtils {
     }
 
     boolean hasNext(TransportBuffer buffer, TransportBuffer.Block block) {
-        buffer.getNext(block.index) != TransportBuffer.NEXT_NONE
+        buffer.getNext(block.index) != TransportBuffer.EMPTY_LINK
     }
 
     TransportBuffer.Block getNext(TransportBuffer buffer, TransportBuffer.Block block) {
         def next = buffer.getNext(block.index)
-        if (next == TransportBuffer.NEXT_NONE) return null
+        if (next == TransportBuffer.EMPTY_LINK) return null
         buffer.blocks[next]
     }
 

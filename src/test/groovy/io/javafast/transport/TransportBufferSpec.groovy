@@ -39,7 +39,7 @@ class TransportBufferSpec extends Specification implements TransportUtils {
     def 'should write a single block full without a new acquire' () {
         given:
         def buffer = TransportBuffer.create(128, 1)
-        def payload = bytes(120) // 120 max. writable space
+        def payload = bytes(116) // 116 max. writable space
         def source = transportSource(payload, [60, 60])
 
         when:
@@ -48,7 +48,7 @@ class TransportBufferSpec extends Specification implements TransportUtils {
         written += writer.read(source)
 
         then:
-        written == 120
+        written == 116
         readBytes(buffer, writer.head, payload.length) == payload
         !hasNext(buffer, writer.head)
         buffer.acquire() == null // cannot acquire, no more blocks left
@@ -101,7 +101,7 @@ class TransportBufferSpec extends Specification implements TransportUtils {
         def writer = source.copyTo(buffer)
 
         then:
-        writer.totalWritten() == 56 + 56
+        writer.totalWritten() == 52 + 52
         buffer.freeBlockCount() == 0
 
         cleanup:
