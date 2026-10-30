@@ -233,4 +233,45 @@ class HttpRequestDecoderSpec extends Specification implements TestUtils {
         writer.release()
         buffer.close()
     }
+
+    def "should throw malformed when header not is not valid according to RFC 9110"() {
+        given:
+        def buffer = TransportBuffer.create(64, 1)
+        def encoder = new HttpTestRequestEncoder()
+        def decoder = new HttpRequestDecoder()
+        def ex = exchange('GET', '/users')
+        ex.requestHeaders.clear()
+        ex.requestHeaders.add('Host', 'localhost')
+        ex.requestHeaders.add(':X X@X', 'not valid')
+
+        def writer = encoder.encode(ex, buffer)
+        def reader = writer.reader()
+
+        when: 'header name has spaces'
+        decoder.parse(reader)
+
+        then:
+        def e = thrown(HttpRequestException)
+        e == HttpRequestException.MALFORMED
+
+        when: 'header name tchars are valid'
+        writer.release()
+        ex = exchange('GET', '/users')
+        ex.requestHeaders.clear()
+        ex.requestHeaders.add('Host', 'localhost')
+        ex.requestHeaders.add("!X#X\$X%X&X'X*X+X-X.X^X_X`X|X~", 'localhost')
+        writer = encoder.encode(ex, buffer)
+        reader = writer.reader()
+
+        and:
+        decoder.parse(reader)
+
+        then:
+        e = thrown(HttpRequestException)
+        e == HttpRequestException.MALFORMED
+
+        cleanup:
+        writer.release()
+        buffer.close()
+    }
 }

@@ -235,8 +235,11 @@ public class HttpRequestDecoder {
                 this.reader.skip(nameLength + 1); // +1 for ':'
                 parseTransferEncoding();
                 continue;
-            } else {
-                this.reader.skip(nameLength + 1); // +1 for ':'
+            } else { // Unknown/vendor headers
+                if (!checkHeaderNameTokens(nameLength)) {
+                    throw HttpRequestException.MALFORMED;
+                }
+                this.reader.skip(1); // +1 for ':'
                 valueStart = this.reader.position();
                 valueLength = this.reader.indexOf(CR, LF);
                 if (valueLength < 0) {
@@ -250,6 +253,24 @@ public class HttpRequestDecoder {
             addHeader(headerCount++ << 2, nameStart, nameLength, valueStart, valueLength);
             this.headersCount = headerCount;
         }
+    }
+
+    private static boolean isToken(byte value) {
+        return (value >= 'a' && value <= 'z')
+            || (value >= 'A' && value <= 'Z')
+            || (value >= '0' && value <= '9')
+            || switch (value) {
+            case '!', '#', '$', '%', '&', '\'', '*', '+',
+                 '-', '.', '^', '_', '`', '|', '~' -> true;
+            default -> false;
+        };
+    }
+
+    private boolean checkHeaderNameTokens(int length) {
+        while (length-- > 0 && isToken(this.reader.get())) {
+            // skip
+        }
+        return length == -1;
     }
 
     private void skipOWS() {
