@@ -637,6 +637,36 @@ public final class TransportBuffer implements AutoCloseable {
         boolean matchesAsciiIgnoreCase(String expected, int offset, int len);
 
         /**
+         * Checks whether the bytes at the current position match the value from bytes, slightly faster
+         */
+        boolean matchesAscii(byte[] value);
+
+        /**
+         * Checks whether the bytes at the current position match the value from the given bytes, slightly faster
+         *
+         * @param value  the value to match
+         * @param offset the offset within the value
+         * @param len    the length of the value
+         */
+        boolean matchesAscii(byte[] value, int offset, int len);
+
+        /**
+         * Checks if the next characters match the expected string bytes, ignoring the ASCII case
+         *
+         * @param expected the expected string bytes
+         */
+        boolean matchesAsciiIgnoreCase(byte[] expected);
+
+        /**
+         * Checks if the next characters match the expected string bytes, ignoring the ASCII case
+         *
+         * @param expected the expected string bytes
+         * @param offset   the offset within the expected string
+         * @param len      the length of the expected string
+         */
+        boolean matchesAsciiIgnoreCase(byte[] expected, int offset, int len);
+
+        /**
          * Consumes one byte if it matches.
          */
         boolean consume(byte expected);
@@ -652,6 +682,11 @@ public final class TransportBuffer implements AutoCloseable {
          * Consumes an ASCII string if it matches.
          */
         boolean consumeAscii(String value);
+
+        /**
+         * Consumes an ASCII string from bytes, slightly faster
+         */
+        boolean consumeAscii(byte[] value);
 
         /**
          * Consume backwards one byte if it matches.
@@ -970,21 +1005,141 @@ public final class TransportBuffer implements AutoCloseable {
 
         @Override
         public boolean matchesAsciiIgnoreCase(String expected, int offset, int len) {
-            if (remaining() < len) {
+            if (len > remaining()) {
                 return false;
             }
 
-            for (int i = 0; i < len; i++) {
-                byte actual = getAt(this.position + i);
-                char expectedChar = expected.charAt(i + offset);
-                if (actual >= 'A' && actual <= 'Z') {
-                    actual |= 0x20;
+            if (this.current == null) {
+                return false;
+            }
+
+            Block block = this.current;
+            int blockOffset = this.currentOffset;
+            int valueOffset = offset;
+            int remaining = len;
+
+            while (block != null && remaining > 0) {
+                final MemorySegment segment = block.payload();
+                final int available = written(block) - blockOffset;
+                final int count = Math.min(available, remaining);
+
+                for (int i = 0; i < count; i++) {
+                    byte actual = segment.get(ValueLayout.JAVA_BYTE, blockOffset + i);
+                    char expectedChar = expected.charAt(valueOffset + i);
+                    if (actual >= 'A' && actual <= 'Z') {
+                        actual |= 0x20;
+                    }
+                    if (expectedChar >= 'A' && expectedChar <= 'Z') {
+                        expectedChar |= 0x20;
+                    }
+                    if (actual != expectedChar) {
+                        return false;
+                    }
                 }
-                if (expectedChar >= 'A' && expectedChar <= 'Z') {
-                    expectedChar |= 0x20;
+
+                remaining -= count;
+                valueOffset += count;
+                blockOffset += count;
+
+                if (remaining > 0) {
+                    block = block.next();
+                    blockOffset = 0;
                 }
-                if (actual != expectedChar) {
-                    return false;
+            }
+
+            return true;
+        }
+
+        @Override
+        public boolean matchesAscii(byte[] value) {
+            return matchesAscii(value, 0, value.length);
+        }
+
+        @Override
+        public boolean matchesAscii(byte[] value, int offset, int len) {
+            if (len > remaining()) {
+                return false;
+            }
+
+            if (this.current == null) {
+                return false;
+            }
+
+            Block block = this.current;
+            int blockOffset = this.currentOffset;
+            int valueOffset = offset;
+            int remaining = len;
+
+            while (block != null && remaining > 0) {
+                final MemorySegment segment = block.payload();
+                final int available = written(block) - blockOffset;
+                final int count = Math.min(available, remaining);
+
+                for (int i = 0; i < count; i++) {
+                    if (segment.get(ValueLayout.JAVA_BYTE, blockOffset + i) != value[valueOffset + i]) {
+                        return false;
+                    }
+                }
+
+                remaining -= count;
+                valueOffset += count;
+                blockOffset += count;
+
+                if (remaining > 0) {
+                    block = block.next();
+                    blockOffset = 0;
+                }
+            }
+
+            return true;
+        }
+
+        @Override
+        public boolean matchesAsciiIgnoreCase(byte[] expected) {
+            return matchesAsciiIgnoreCase(expected, 0, expected.length);
+        }
+
+        @Override
+        public boolean matchesAsciiIgnoreCase(byte[] expected, int offset, int len) {
+            if (len > remaining()) {
+                return false;
+            }
+
+            if (this.current == null) {
+                return false;
+            }
+
+            Block block = this.current;
+            int blockOffset = this.currentOffset;
+            int valueOffset = offset;
+            int remaining = len;
+
+            while (block != null && remaining > 0) {
+                final MemorySegment segment = block.payload();
+                final int available = written(block) - blockOffset;
+                final int count = Math.min(available, remaining);
+
+                for (int i = 0; i < count; i++) {
+                    byte actual = segment.get(ValueLayout.JAVA_BYTE, blockOffset + i);
+                    byte expectedChar = expected[valueOffset + i];
+                    if (actual >= 'A' && actual <= 'Z') {
+                        actual |= 0x20;
+                    }
+                    if (expectedChar >= 'A' && expectedChar <= 'Z') {
+                        expectedChar |= 0x20;
+                    }
+                    if (actual != expectedChar) {
+                        return false;
+                    }
+                }
+
+                remaining -= count;
+                valueOffset += count;
+                blockOffset += count;
+
+                if (remaining > 0) {
+                    block = block.next();
+                    blockOffset = 0;
                 }
             }
 
@@ -1029,6 +1184,15 @@ public final class TransportBuffer implements AutoCloseable {
                 return false;
             }
             advance(value.length());
+            return true;
+        }
+
+        @Override
+        public boolean consumeAscii(byte[] value) {
+            if (!matchesAscii(value)) {
+                return false;
+            }
+            advance(value.length);
             return true;
         }
 

@@ -35,10 +35,12 @@ public class HttpRequestDecoder {
     private static final byte HTAB = '\t';
     private static final byte COLON = ':';
 
-    private static final String HOST = "host";
-    private static final String CONTENT_LENGTH = "content-length";
-    private static final String TRANSFER_ENCODING = "transfer-encoding";
-    private static final String TRANSFER_CODE_CHUNKED = "chunked";
+    // TODO move into Headers?
+    private static final byte[] HTTP_VERSION = "HTTP/1.1".getBytes(StandardCharsets.US_ASCII);
+    private static final byte[] HOST = "host".getBytes(StandardCharsets.US_ASCII);
+    private static final byte[] CONTENT_LENGTH = "content-length".getBytes(StandardCharsets.US_ASCII);
+    private static final byte[] TRANSFER_ENCODING = "transfer-encoding".getBytes(StandardCharsets.US_ASCII);
+    private static final byte[] TRANSFER_CODE_CHUNKED = "chunked".getBytes(StandardCharsets.US_ASCII);
 
     private static long hasSpace(long word) {
         final long x = word ^ 0x2020202020202020L;
@@ -161,7 +163,7 @@ public class HttpRequestDecoder {
         this.target.reset(this.reader, this.targetStart, this.targetLength);
         this.reader.skip(this.targetLength + 1);
 
-        if (!this.reader.consumeAscii("HTTP/1.1")) {
+        if (!this.reader.consumeAscii(HTTP_VERSION)) {
             throw HttpRequestException.NOT_SUPPORTED;
         }
 
@@ -277,16 +279,16 @@ public class HttpRequestDecoder {
         if (valueLength < 0) {
             throw HttpRequestException.MALFORMED;
         }
-        if (valueLength < TRANSFER_CODE_CHUNKED.length()) {
+        if (valueLength < TRANSFER_CODE_CHUNKED.length) {
             throw HttpRequestException.MALFORMED;
         }
         this.reader.skip(valueLength);
         final int rewind = rewindOWS();
-        this.reader.rewind(TRANSFER_CODE_CHUNKED.length());
+        this.reader.rewind(TRANSFER_CODE_CHUNKED.length);
         if (!this.reader.matchesAsciiIgnoreCase(TRANSFER_CODE_CHUNKED)) {
             throw HttpRequestException.UNSUPPORTED_TRANSFER_ENCODING;
         }
-        this.reader.skip(TRANSFER_CODE_CHUNKED.length() + rewind); // keep position aligned
+        this.reader.skip(TRANSFER_CODE_CHUNKED.length + rewind); // keep position aligned
         this.chunked = true;
     }
 

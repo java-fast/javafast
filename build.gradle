@@ -34,6 +34,7 @@ dependencies {
 }
 
 String jmhIncludes = findProperty("jmh.includes")
+String vectorizedReader = findProperty("javafast.vectorized.reader")
 jmh {
     if (jmhIncludes != null) {
         includes = [jmhIncludes]
@@ -43,7 +44,12 @@ jmh {
     fork = 1
     resultFormat = 'JSON'
     profilers = ['gc']
-    jvmArgsAppend = ['-XX:+UseG1GC', '--add-modules jdk.incubator.vector']
+    jvmArgsAppend = [
+      '-XX:+UseG1GC',
+      '--add-modules jdk.incubator.vector',
+      "-Djavafast.vectorized.reader=${vectorizedReader}"
+    ]
+
 }
 
 tasks.withType(JavaCompile).configureEach {

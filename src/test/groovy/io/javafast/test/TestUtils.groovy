@@ -11,15 +11,12 @@ import io.javafast.http.HttpMethod
 import io.javafast.internal.ByteString
 import io.javafast.internal.RequestContext
 import io.javafast.transport.JdkHttpTransport
-import io.javafast.transport.JdkTestTransport
 import io.javafast.transport.Transport
 import io.javafast.transport.TransportBuffer
 
 import java.net.http.HttpClient
 import java.net.http.HttpRequest
 import java.net.http.HttpResponse
-import java.nio.ByteBuffer
-import java.nio.channels.ReadableByteChannel
 import java.nio.charset.StandardCharsets
 import java.util.function.Consumer
 import java.util.function.Supplier
@@ -193,7 +190,7 @@ trait TestUtils implements Logger {
     Context contextOf(HttpMethod method, String uri) {
         def ctx = new RequestContext()
         ctx.method = method
-        ctx.target().reset(reader(uri), 0, uri.length())
+        ctx.decoder.target.reset(reader(uri), 0, uri.length())
         return ctx
     }
 
