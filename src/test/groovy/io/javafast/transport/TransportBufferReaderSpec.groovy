@@ -257,4 +257,21 @@ class TransportBufferReaderSpec extends Specification implements TransportUtils 
         buffer.close()
     }
 
+    def 'copyTo should not modify reader position'() {
+        given:
+        def buffer = TransportBuffer.create(64, 1)
+        def writer = buffer.writer()
+        writer.read('Hello World')
+        def reader = writer.reader()
+        reader.position(3)
+        byte[] destination = new byte[5]
+
+        when:
+        reader.copyTo(6, destination, 0, 5)
+
+        then:
+        new String(destination) == 'World'
+        reader.position() == 3
+    }
+
 }

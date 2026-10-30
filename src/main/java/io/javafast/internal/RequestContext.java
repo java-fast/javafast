@@ -369,7 +369,7 @@ final class RequestContext implements Context {
 
     @Override
     public String header(int index) {
-        if (index >= this.decoder.getHeadersCount()) {
+        if (index < 0 || index >= this.decoder.getHeadersCount()) {
             return null;
         }
         ensureRequestReadable();

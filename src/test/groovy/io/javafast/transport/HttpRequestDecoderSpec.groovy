@@ -29,11 +29,9 @@ class HttpRequestDecoderSpec extends Specification implements TestUtils {
         decoder.contentLength == 0
         !decoder.chunked
         decoder.getHeaderName(0) == 'Host'
-        decoder.getHeaderName(1) == 'Content-length'
-        decoder.getHeaderName(2) == 'X-test'
+        decoder.getHeaderName(1) == 'X-test'
         decoder.getHeader(0) == 'localhost'
-        decoder.getHeader(1) == '0'
-        decoder.getHeader(2) == 'abc'
+        decoder.getHeader(1) == 'abc'
         decoder.getBodyAsString() == ''
 
         cleanup:
@@ -61,8 +59,6 @@ class HttpRequestDecoderSpec extends Specification implements TestUtils {
         decoder.target.toString() == '/users/42?active=true'
         decoder.contentLength == 128
         !decoder.chunked
-        decoder.getHeaderName(1) == 'Content-length'
-        decoder.getHeader(1) == '128'
         decoder.getBodyAsString() == 'b' + 'o'.repeat(127)
 
         cleanup:
@@ -174,11 +170,9 @@ class HttpRequestDecoderSpec extends Specification implements TestUtils {
         decoder.contentLength == 0
         !decoder.chunked
         decoder.getHeaderName(0) == 'Host'
-        decoder.getHeaderName(1) == 'Content-length'
-        decoder.getHeaderName(2) == 'X-test'
+        decoder.getHeaderName(1) == 'X-test'
         decoder.getHeader(0) == 'example.com'
-        decoder.getHeader(1) == '0'
-        decoder.getHeader(2) == 'abc efg'
+        decoder.getHeader(1) == 'abc efg'
         decoder.getBodyAsString() == ''
 
         cleanup:

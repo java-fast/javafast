@@ -13,8 +13,12 @@ import java.nio.charset.StandardCharsets;
  */
 public final class ByteString {
 
+    private static final byte SPACE = ' ';
+    private static final byte HTAB = '\t';
+
     private TransportBuffer.Reader reader;
-    private int position;
+    private int position; // reader position (absolute)
+    private int offset; // bytes array offset
     private int length;
 
     private String value; // lazy cache
@@ -31,10 +35,11 @@ public final class ByteString {
     public void reset(TransportBuffer.Reader reader, int position, int length) {
         this.reader = reader;
         this.position = position;
+        this.offset = 0;
         this.length = length;
         this.value = null;
         if (this.length <= this.bytes.length) {
-            reader.copyTo(this.position, this.bytes, 0, this.length);
+            reader.copyTo(this.position, this.bytes, this.offset, this.length);
         }
     }
 
@@ -45,7 +50,7 @@ public final class ByteString {
     public byte byteAt(int index) {
         checkIndex(index);
         if (this.length <= this.bytes.length) {
-            return this.bytes[index];
+            return this.bytes[this.offset + index];
         }
         return this.reader.getAt(this.position + index);
     }
@@ -66,7 +71,7 @@ public final class ByteString {
 
         if (this.length <= this.bytes.length) { // for small strings, compare bytes directly
             for (int i = 0; i < len; i++) {
-                final byte actual = this.bytes[toffset + i];
+                final byte actual = this.bytes[this.offset + toffset + i];
                 final byte expected = (byte) ascii.charAt(ooffset + i);
                 if (actual != expected &&
                     (!ignoreCase || (actual | 0x20) != (expected | 0x20))) {
@@ -76,17 +81,22 @@ public final class ByteString {
             return true;
         }
 
-        this.reader.position(this.position + toffset);
-        if (ignoreCase) {
-            return this.reader.matchesAsciiIgnoreCase(ascii, ooffset, len);
+        final int pos = this.reader.position();
+        try {
+            this.reader.position(this.position + toffset);
+            if (ignoreCase) {
+                return this.reader.matchesAsciiIgnoreCase(ascii, ooffset, len);
+            }
+            return this.reader.matchesAscii(ascii, ooffset, len);
+        } finally {
+            this.reader.position(pos); // restore position
         }
-        return this.reader.matchesAscii(ascii, ooffset, len);
     }
 
     public int indexOf(char c) {
         if (this.length <= this.bytes.length) { // for small strings, compare bytes directly
             for (int i = 0; i < this.length; i++) {
-                final byte actual = this.bytes[i];
+                final byte actual = this.bytes[this.offset + i];
                 final byte expected = (byte) c;
                 if (actual == expected) {
                     return i;
@@ -94,16 +104,57 @@ public final class ByteString {
             }
             return -1;
         }
-        this.reader.position(this.position);
-        return this.reader.indexOf((byte) c);
+        final int pos = this.reader.position();
+        try {
+            this.reader.position(this.position);
+            return this.reader.indexOf((byte) c);
+        } finally {
+            this.reader.position(pos);
+        }
     }
 
     public String substring(int beginIndex, int endIndex) {
         checkRange(beginIndex, endIndex);
         if (this.length <= this.bytes.length) {
-            return new String(this.bytes, beginIndex, endIndex - beginIndex, StandardCharsets.US_ASCII);
+            return new String(this.bytes, this.offset + beginIndex, endIndex - beginIndex, StandardCharsets.US_ASCII);
         }
         return this.reader.getAscii(this.position + beginIndex, endIndex - beginIndex);
+    }
+
+    public void trim() {
+        if (this.length <= this.bytes.length) {
+            int pos = 0;
+            while (pos < this.length && (this.bytes[pos] == SPACE || this.bytes[pos] == HTAB)) { // leading OWS
+                this.offset++;
+                this.position++;
+                pos++;
+            }
+            pos = this.length - 1;
+            while (pos >= 0 && (this.bytes[pos] == SPACE || this.bytes[pos] == HTAB)) { // trailing OWS
+                this.length--;
+                pos--;
+            }
+            this.length -= this.offset;
+            return;
+        }
+        // trim via reader, do not modify cursor
+        final int pos = this.reader.position();
+        try {
+            int trimStart = 0;
+            this.reader.position(this.position);
+            while (trimStart < this.length && (this.reader.consume(SPACE) || this.reader.consume(HTAB))) { // leading OWS
+                this.position++;
+                trimStart++;
+            }
+            int trimEnd = this.length;
+            while (trimEnd > 0 && (this.reader.consume(SPACE) || this.reader.consume(HTAB))) { // trailing OWS
+                this.length--;
+                trimEnd--;
+            }
+            this.length -= trimStart;
+        } finally {
+            this.reader.position(pos);
+        }
     }
 
     public boolean endsWith(char c) {
@@ -111,7 +162,7 @@ public final class ByteString {
             return false;
         }
         if (this.length <= this.bytes.length) {
-            return this.bytes[this.length - 1] == c;
+            return this.bytes[this.offset + this.length - 1] == c;
         }
         return this.reader.getAt(this.position + this.length - 1) == c;
     }
@@ -121,7 +172,7 @@ public final class ByteString {
             return false;
         }
         if (this.length <= this.bytes.length) {
-            return this.bytes[0] == other;
+            return this.bytes[this.offset] == other;
         }
         return this.reader.getAt(this.position) == other;
     }
@@ -137,7 +188,7 @@ public final class ByteString {
     public String toString() {
         if (this.value == null) {
             if (this.length <= this.bytes.length) {
-                this.value = new String(this.bytes, 0, this.length, StandardCharsets.US_ASCII);
+                this.value = new String(this.bytes, this.offset, this.length, StandardCharsets.US_ASCII);
             } else {
                 this.value = this.reader.getAscii(this.position, this.length);
             }

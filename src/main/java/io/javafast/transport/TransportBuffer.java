@@ -17,6 +17,7 @@ import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.channels.ReadableByteChannel;
 import java.nio.channels.WritableByteChannel;
+import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.util.Objects;
 
@@ -675,14 +676,6 @@ public final class TransportBuffer implements AutoCloseable {
         int indexOf(byte first, byte second);
 
         /**
-         * Finds a two-byte value starting from the current cursor position.
-         * Handles block boundaries. Optionally, trims the space and htab from the end.
-         *
-         * @return cursor relative position (length)
-         */
-        int indexOf(byte first, byte second, boolean trim);
-
-        /**
          * Retrieves the byte at the specified position without modifying the cursor
          *
          * @param position the zero-based index of the byte to retrieve
@@ -708,6 +701,25 @@ public final class TransportBuffer implements AutoCloseable {
          */
         String getUtf8(int offset, int length);
 
+        /**
+         * Retrieves the string at the specified position without modifying the cursor.
+         *
+         * @param offset the zero-based index of the first byte to retrieve
+         * @param length the number of bytes to retrieve
+         * @param charset the charset to use
+         * @param trim whether to trim the string
+         * @return the string located at the specified position
+         */
+        String getString(int offset, int length, Charset charset, boolean trim);
+
+        /**
+         * Copies the data at the specified position to the given destination array without modifying the cursor
+         *
+         * @param offset absolute offset for the Reader
+         * @param destination the destination array
+         * @param destinationOffset the zero-based index of the first destination array element
+         * @param length the number of bytes to copy
+         */
         void copyTo(int offset, byte[] destination, int destinationOffset, int length);
 
         /**
@@ -730,14 +742,14 @@ public final class TransportBuffer implements AutoCloseable {
 
         protected final Block head;
 
-        Block current;
-        int currentOffset;
+        protected Block current;
+        protected int currentOffset;
 
         /**
          * Logical position within the request. Request size is bounded by MAX_REQUEST_SIZE.
          * Therefore, an int is enough.
          */
-        private int position;
+        protected int position;
 
         private ReaderImpl(Block head) {
             this.head = head;
@@ -1053,16 +1065,10 @@ public final class TransportBuffer implements AutoCloseable {
 
         @Override
         public int indexOf(byte first, byte second) {
-            return indexOf(first, second, false);
-        }
-
-        @Override
-        public int indexOf(byte first, byte second, boolean trim) {
             Block block = this.current;
             int blockOffset = this.currentOffset;
             int relativePos = 0;
 
-            int spaces = 0;
             while (block != null) {
                 final MemorySegment segment = block.payload();
                 final int end = written(block);
@@ -1070,30 +1076,21 @@ public final class TransportBuffer implements AutoCloseable {
                 for (int i = blockOffset; i < end - 1; i++) {
                     final byte b1 = segment.get(ValueLayout.JAVA_BYTE, i);
                     final byte b2 = segment.get(ValueLayout.JAVA_BYTE, i + 1);
-                    if (trim && (b1 == SPACE || b1 == HTAB)) {
-                        spaces++;
-                        continue;
-                    }
                     if (b1 == first && b2 == second) {
-                        return relativePos + (i - blockOffset) - spaces;
+                        return relativePos + (i - blockOffset);
                     }
-                    spaces = 0;
                 }
                 // Slow path: first byte is the last byte of this block.
                 if (blockOffset < end) {
                     final byte last = segment.get(ValueLayout.JAVA_BYTE, end - 1);
-                    if (trim && (last == SPACE || last == HTAB)) {
-                        spaces++;
-                    }
                     if (last == first) {
                         final Block next = block.next();
                         if (next != null) {
                             final MemorySegment nextSegment = next.payload();
                             if (written(next) > 0 && nextSegment.get(ValueLayout.JAVA_BYTE, 0) == second) {
-                                return relativePos + (end - blockOffset - 1) - spaces;
+                                return relativePos + (end - blockOffset - 1);
                             }
                         }
-                        spaces = 0;
                     }
                 }
 
@@ -1157,6 +1154,28 @@ public final class TransportBuffer implements AutoCloseable {
         }
 
         @Override
+        public String getString(int offset, int length, Charset charset, boolean trim) {
+            final byte[] bytes = getBytes(offset, length);
+            if (trim) {
+                int pos = 0;
+                offset = 0;
+                length = bytes.length;
+                while (pos < length && (bytes[pos] == SPACE || bytes[pos] == HTAB)) { // leading OWS
+                    offset++;
+                    length--;
+                    pos++;
+                }
+                pos = bytes.length - 1;
+                while (pos >= 0 && (bytes[pos] == SPACE || bytes[pos] == HTAB)) { // trailing OWS
+                    length--;
+                    pos--;
+                }
+                return new String(bytes, offset, length, charset);
+            }
+            return new String(bytes, charset);
+        }
+
+        @Override
         public void copyTo(int offset, byte[] destination, int destinationOffset, int length) {
             if (length < 0 || offset < 0 || destinationOffset < 0 || destinationOffset + length > destination.length) {
                 throw new IndexOutOfBoundsException();
@@ -1166,13 +1185,14 @@ public final class TransportBuffer implements AutoCloseable {
                 throw new IndexOutOfBoundsException("Not enough data: offset=" + offset + ", length=" + length);
             }
 
-            locate(offset);
-
-            Block block = this.current;
-            int blockOffset = this.currentOffset;
+            Block block = this.head;
+            int blockOffset = offset;
+            while (block != null && blockOffset >= written(block)) {
+                blockOffset -= written(block);
+                block = block.next();
+            }
             int remaining = length;
             int dest = destinationOffset;
-
             while (block != null && remaining > 0) {
                 final MemorySegment segment = block.payload();
                 final int available = written(block) - blockOffset;
@@ -1393,117 +1413,13 @@ public final class TransportBuffer implements AutoCloseable {
         public int indexOf(byte first, byte second) {
             try {
                 int pos;
-                while ((pos = this.indexOf(first)) > -1 && getAt(this.position() + pos + 1) != second) {
+                while ((pos = this.indexOf(first)) > -1 && getAt(this.position + pos + 1) != second) {
                     // skip
                 }
                 return pos;
             } catch (IndexOutOfBoundsException e) {
                 return -1;
             }
-        }
-
-        @Override
-        public int indexOf(byte first, byte second, boolean trim) {
-            if (!trim) {
-                return this.indexOf(first, second);
-            }
-
-            Block block = this.current;
-            int blockOffset = this.currentOffset;
-            int relativePos = 0;
-            int spaces = 0;
-
-            while (block != null) {
-                final MemorySegment segment = block.payload();
-                final int end = written(block);
-                final int vectorLength = SPECIES.length();
-
-                int i = blockOffset;
-                int previousEvent = blockOffset - 1;
-
-                for (; i + vectorLength < end; i += vectorLength) {
-                    ByteVector v1 = ByteVector.fromMemorySegment(
-                        SPECIES, segment, i, ByteOrder.nativeOrder());
-                    ByteVector v2 = ByteVector.fromMemorySegment(
-                        SPECIES, segment, i + 1, ByteOrder.nativeOrder());
-
-                    VectorMask<Byte> whitespace = v1.compare(VectorOperators.EQ, SPACE)
-                        .or(v1.compare(VectorOperators.EQ, HTAB));
-
-                    VectorMask<Byte> pair = v1.compare(VectorOperators.EQ, first)
-                        .and(v2.compare(VectorOperators.EQ, second));
-
-                    long events = whitespace.or(pair).toLong();
-                    long whitespaceBits = whitespace.toLong();
-
-                    while (events != 0) {
-                        int lane = Long.numberOfTrailingZeros(events);
-                        int pos = i + lane;
-
-                        if (pos != previousEvent + 1) {
-                            spaces = 0;
-                        }
-
-                        long bit = 1L << lane;
-
-                        if ((whitespaceBits & bit) != 0) {
-                            spaces++;
-                        } else {
-                            return relativePos + pos - blockOffset - spaces;
-                        }
-
-                        previousEvent = pos;
-                        events &= events - 1;
-                    }
-                }
-
-                // Scalar tail: aynı davranışı koru.
-                for (; i < end - 1; i++) {
-                    byte b1 = segment.get(ValueLayout.JAVA_BYTE, i);
-                    byte b2 = segment.get(ValueLayout.JAVA_BYTE, i + 1);
-
-                    if (b1 == SPACE || b1 == HTAB) {
-                        spaces++;
-                        continue;
-                    }
-
-                    if (b1 == first && b2 == second) {
-                        return relativePos + (i - blockOffset) - spaces;
-                    }
-
-                    spaces = 0;
-                }
-
-                // Block sınırındaki iki byte'lık eşleşme.
-                if (blockOffset < end) {
-                    byte last = segment.get(ValueLayout.JAVA_BYTE, end - 1);
-
-                    if (last == SPACE || last == HTAB) {
-                        spaces++;
-                    }
-
-                    if (last == first) {
-                        Block next = block.next();
-
-                        if (next != null) {
-                            MemorySegment nextSegment = next.payload();
-
-                            if (written(next) > 0
-                                && nextSegment.get(ValueLayout.JAVA_BYTE, 0) == second) {
-                                return relativePos + (end - blockOffset - 1) - spaces;
-                            }
-                        }
-
-                        spaces = 0;
-                    }
-                }
-
-                relativePos += end - blockOffset;
-                block = block.next();
-                blockOffset = 0;
-            }
-
-            return -1;
         }
     }
 
