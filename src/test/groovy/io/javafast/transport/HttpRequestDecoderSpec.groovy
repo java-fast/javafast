@@ -10,14 +10,15 @@ class HttpRequestDecoderSpec extends Specification implements TestUtils {
     def "should decode method target and headers from http1.1 wire format"() {
         given:
         def buffer = TransportBuffer.create(256, 2)
-        def encoder = new HttpTestRequestEncoder()
         def decoder = new HttpRequestDecoder()
-        def ex = exchange('POST', '/users/42?active=true')
-        ex.requestHeaders.add('Content-Length', '0')
-        ex.requestHeaders.add('X-Test', 'abc')
-
-        def block = encoder.encode(ex, buffer)
-        def reader = block.reader()
+        def writer = buffer.writer()
+        def reader = writer.reader()
+        writer.writeUtf8('POST /users/42?active=true HTTP/1.1\r\n' +
+          'Host:localhost\r\n' +
+          'Content-length:0\r\n' +
+          'X-test:abc\r\n' +
+          '\r\n'
+        )
 
         when:
         decoder.parse(reader)
@@ -29,27 +30,30 @@ class HttpRequestDecoderSpec extends Specification implements TestUtils {
         decoder.contentLength == 0
         !decoder.chunked
         decoder.getHeaderName(0) == 'Host'
-        decoder.getHeaderName(1) == 'X-test'
+        decoder.getHeaderName(1) == 'Content-length'
+        decoder.getHeaderName(2) == 'X-test'
         decoder.getHeader(0) == 'localhost'
-        decoder.getHeader(1) == 'abc'
+        decoder.getHeader(1) == '0'
+        decoder.getHeader(2) == 'abc'
         decoder.getBodyAsString() == ''
 
         cleanup:
-        block.release()
+        writer.release()
         buffer.close()
     }
 
     def "should decode body"() {
         given:
         def buffer = TransportBuffer.create(256, 2)
-        def encoder = new HttpTestRequestEncoder()
         def decoder = new HttpRequestDecoder()
-        def ex = exchange('POST', '/users/42?active=true', 'b' + 'o'.repeat(127))
-        ex.requestHeaders.add('Content-Length', '128')
-        ex.requestBody
-
-        def block = encoder.encode(ex, buffer)
-        def reader = block.reader()
+        def writer = buffer.writer()
+        def reader = writer.reader()
+        writer.writeUtf8('POST /users/42?active=true HTTP/1.1\r\n' +
+          'Host:localhost\r\n' +
+          'Content-length:128\r\n' +
+          '\r\n' +
+          'b' + 'o'.repeat(127)
+        )
 
         when:
         decoder.parse(reader)
@@ -62,21 +66,23 @@ class HttpRequestDecoderSpec extends Specification implements TestUtils {
         decoder.getBodyAsString() == 'b' + 'o'.repeat(127)
 
         cleanup:
-        block.release()
+        writer.release()
         buffer.close()
     }
 
     def "should detect chunked transfer encoding"() {
         given:
         def buffer = TransportBuffer.create(256, 2)
-        def encoder = new HttpTestRequestEncoder()
         def decoder = new HttpRequestDecoder()
 
         when: 'supported multiple codes'
-        def ex = exchange('GET', '/stream')
-        ex.requestHeaders.add('Transfer-Encoding', 'gzip, chunked')
-        def writer = encoder.encode(ex, buffer)
+        def writer = buffer.writer()
         def reader = writer.reader()
+        writer.writeUtf8('GET /stream HTTP/1.1\r\n' +
+          'Host:localhost\r\n' +
+          'Transfer-Encoding:gzip, chunked\r\n' +
+          '\r\n'
+        )
 
         and:
         decoder.parse(reader)
@@ -88,10 +94,13 @@ class HttpRequestDecoderSpec extends Specification implements TestUtils {
 
         when: 'supported single code'
         writer.release()
-        ex = exchange('GET', '/stream')
-        ex.requestHeaders.add('Transfer-Encoding', 'chunked')
-        writer = encoder.encode(ex, buffer)
+        writer = buffer.writer()
         reader = writer.reader()
+        writer.writeUtf8('GET /stream HTTP/1.1\r\n' +
+          'Host:localhost\r\n' +
+          'Transfer-Encoding:chunked\r\n' +
+          '\r\n'
+        )
 
         and:
         decoder.parse(reader)
@@ -103,10 +112,13 @@ class HttpRequestDecoderSpec extends Specification implements TestUtils {
 
         when: 'supported with OWS'
         writer.release()
-        ex = exchange('GET', '/stream')
-        ex.requestHeaders.add('Transfer-Encoding', ' chunked    ')
-        writer = encoder.encode(ex, buffer)
+        writer = buffer.writer()
         reader = writer.reader()
+        writer.writeUtf8('GET /stream HTTP/1.1\r\n' +
+          'Host:localhost\r\n' +
+          'Transfer-Encoding: chunked    \r\n' +
+          '\r\n'
+        )
 
         and:
         decoder.parse(reader)
@@ -118,10 +130,13 @@ class HttpRequestDecoderSpec extends Specification implements TestUtils {
 
         when: 'unsupported transfer encoding'
         writer.release()
-        ex = exchange('GET', '/stream')
-        ex.requestHeaders.add('Transfer-Encoding', 'chunked, gzip') // not valid in RFC 9112
-        writer = encoder.encode(ex, buffer)
+        writer = buffer.writer()
         reader = writer.reader()
+        writer.writeUtf8('GET /stream HTTP/1.1\r\n' +
+          'Host:localhost\r\n' +
+          'Transfer-Encoding:chunked, gzip\r\n' + // not valid in RFC 9112
+          '\r\n'
+        )
 
         and:
         decoder.parse(reader)
@@ -131,10 +146,13 @@ class HttpRequestDecoderSpec extends Specification implements TestUtils {
 
         when: 'unsupported transfer encoding'
         writer.release()
-        ex = exchange('GET', '/stream')
-        ex.requestHeaders.add('Transfer-Encoding', 'gzip') // not valid in RFC 9112
-        writer = encoder.encode(ex, buffer)
+        writer = buffer.writer()
         reader = writer.reader()
+        writer.writeUtf8('GET /stream HTTP/1.1\r\n' +
+          'Host:localhost\r\n' +
+          'Transfer-Encoding:gzip\r\n' + // not valid in RFC 9112
+          '\r\n'
+        )
 
         and:
         decoder.parse(reader)
@@ -150,16 +168,16 @@ class HttpRequestDecoderSpec extends Specification implements TestUtils {
     def "should decode headers with empty spaces"() {
         given:
         def buffer = TransportBuffer.create(256, 2)
-        def encoder = new HttpTestRequestEncoder()
         def decoder = new HttpRequestDecoder()
-        def ex = exchange('POST', '/users/42?active=true')
-        ex.requestHeaders.clear()
-        ex.requestHeaders.add('Host', ' example.com  ')
-        ex.requestHeaders.add('Content-Length', ' 0  ')
-        ex.requestHeaders.add('X-Test', '  abc efg   ')
 
-        def block = encoder.encode(ex, buffer)
-        def reader = block.reader()
+        def writer = buffer.writer()
+        def reader = writer.reader()
+        writer.writeUtf8('POST /users/42?active=true HTTP/1.1\r\n' +
+          'Host: example.com  \r\n' +
+          'Content-Length: 0  \r\n' +
+          'X-Test:  abc efg   \r\n' +
+          '\r\n'
+        )
 
         when:
         decoder.parse(reader)
@@ -170,27 +188,29 @@ class HttpRequestDecoderSpec extends Specification implements TestUtils {
         decoder.contentLength == 0
         !decoder.chunked
         decoder.getHeaderName(0) == 'Host'
-        decoder.getHeaderName(1) == 'X-test'
+        decoder.getHeaderName(1) == 'Content-Length'
+        decoder.getHeaderName(2) == 'X-Test'
         decoder.getHeader(0) == 'example.com'
-        decoder.getHeader(1) == 'abc efg'
+        decoder.getHeader(1) == '0'
+        decoder.getHeader(2) == 'abc efg'
         decoder.getBodyAsString() == ''
 
         cleanup:
-        block.release()
+        writer.release()
         buffer.close()
     }
 
     def "should throw malformed when invalid or missing host header"() {
         given:
         def buffer = TransportBuffer.create(256, 2)
-        def encoder = new HttpTestRequestEncoder()
         def decoder = new HttpRequestDecoder()
-        def ex = exchange('GET', '/users')
-        ex.requestHeaders.clear()
-        ex.requestHeaders.add('Content-Length', '0')
 
-        def writer = encoder.encode(ex, buffer)
+        def writer = buffer.writer()
         def reader = writer.reader()
+        writer.writeUtf8('GET /users HTTP/1.1\r\n' +
+          'Content-Length:0\r\n' +
+          '\r\n'
+        )
 
         when: 'host header is missing'
         decoder.parse(reader)
@@ -201,13 +221,12 @@ class HttpRequestDecoderSpec extends Specification implements TestUtils {
 
         when: 'host header is invalid'
         writer.release()
-        ex = exchange('GET', '/users')
-        ex.requestHeaders.clear()
-        ex.requestHeaders.add('Host', 'invalid@example.com')
-        writer = encoder.encode(ex, buffer)
+        writer = buffer.writer()
         reader = writer.reader()
-
-        and:
+        writer.writeUtf8('GET /users HTTP/1.1\r\n' +
+          'Host:invalid@example.com\r\n' +
+          '\r\n'
+        )
         decoder.parse(reader)
 
         then:
@@ -216,13 +235,12 @@ class HttpRequestDecoderSpec extends Specification implements TestUtils {
 
         when: 'host header ipv6 is invalid'
         writer.release()
-        ex = exchange('GET', '/users')
-        ex.requestHeaders.clear()
-        ex.requestHeaders.add('Host', '[invalid]')
-        writer = encoder.encode(ex, buffer)
+        writer = buffer.writer()
         reader = writer.reader()
-
-        and:
+        writer.writeUtf8('GET /users HTTP/1.1\r\n' +
+          'Host:[invalid]\r\n' +
+          '\r\n'
+        )
         decoder.parse(reader)
 
         then:
@@ -234,18 +252,22 @@ class HttpRequestDecoderSpec extends Specification implements TestUtils {
         buffer.close()
     }
 
-    def "should throw malformed when header not is not valid according to RFC 9110"() {
+    def "should throw malformed when header is not valid according to RFC 9110"() {
         given:
-        def buffer = TransportBuffer.create(64, 1)
-        def encoder = new HttpTestRequestEncoder()
+        def buffer = TransportBuffer.create(128, 1)
         def decoder = new HttpRequestDecoder()
         def ex = exchange('GET', '/users')
         ex.requestHeaders.clear()
         ex.requestHeaders.add('Host', 'localhost')
         ex.requestHeaders.add(':X X@X', 'not valid')
 
-        def writer = encoder.encode(ex, buffer)
+        def writer = buffer.writer()
         def reader = writer.reader()
+        writer.writeUtf8('GET /users HTTP/1.1\r\n' +
+          'Host: localhost\r\n' +
+          ':X X@X:not valid\r\n' +
+          '\r\n'
+        )
 
         when: 'header name has spaces'
         decoder.parse(reader)
@@ -256,19 +278,19 @@ class HttpRequestDecoderSpec extends Specification implements TestUtils {
 
         when: 'header name tchars are valid'
         writer.release()
-        ex = exchange('GET', '/users')
-        ex.requestHeaders.clear()
-        ex.requestHeaders.add('Host', 'localhost')
-        ex.requestHeaders.add("!X#X\$X%X&X'X*X+X-X.X^X_X`X|X~", 'localhost')
-        writer = encoder.encode(ex, buffer)
+        writer = buffer.writer()
         reader = writer.reader()
+        writer.writeUtf8('GET /users HTTP/1.1\r\n' +
+          'Host: localhost\r\n' +
+          '!X#X\$X%X&X\'X*X+X-X.X^X_X`X|X~:valid\r\n' +
+          '\r\n'
+        )
 
         and:
         decoder.parse(reader)
 
         then:
-        e = thrown(HttpRequestException)
-        e == HttpRequestException.MALFORMED
+        noExceptionThrown()
 
         cleanup:
         writer.release()

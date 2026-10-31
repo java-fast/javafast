@@ -4,7 +4,13 @@ import io.javafast.http.HttpMethod;
 import io.javafast.http.HttpRequestException;
 import io.javafast.internal.ByteString;
 import io.javafast.util.HostValidator;
+import jdk.incubator.vector.ByteVector;
+import jdk.incubator.vector.VectorMask;
+import jdk.incubator.vector.VectorOperators;
+import jdk.incubator.vector.VectorSpecies;
 
+import java.lang.foreign.MemorySegment;
+import java.lang.foreign.ValueLayout;
 import java.nio.ByteOrder;
 import java.nio.charset.StandardCharsets;
 
@@ -36,11 +42,12 @@ public class HttpRequestDecoder {
     private static final byte COLON = ':';
 
     // TODO move into Headers?
-    private static final byte[] HTTP_VERSION = "HTTP/1.1".getBytes(StandardCharsets.US_ASCII);
-    private static final byte[] HOST = "host".getBytes(StandardCharsets.US_ASCII);
-    private static final byte[] CONTENT_LENGTH = "content-length".getBytes(StandardCharsets.US_ASCII);
-    private static final byte[] TRANSFER_ENCODING = "transfer-encoding".getBytes(StandardCharsets.US_ASCII);
-    private static final byte[] TRANSFER_CODE_CHUNKED = "chunked".getBytes(StandardCharsets.US_ASCII);
+    private static final byte[] HOST = new byte[] {'h', 'o', 's', 't', ':'};
+    private static final byte[] CONTENT_LENGTH = new byte[] {'c', 'o', 'n', 't', 'e', 'n', 't', '-', 'l', 'e', 'n', 'g', 't', 'h', ':'};
+    private static final byte[] TRANSFER_ENCODING = new byte[] {'t', 'r', 'a', 'n', 's', 'f', 'e', 'r', '-', 'e', 'n', 'c', 'o', 'd', 'i', 'n', 'g', ':'};
+
+    private static final byte[] HTTP_VERSION = new byte[] {'H', 'T', 'T', 'P', '/', '1', '.', '1'};
+    private static final byte[] TRANSFER_CODE_CHUNKED = new byte[] {'c', 'h', 'u', 'n', 'k', 'e', 'd'};
 
     private static long hasSpace(long word) {
         final long x = word ^ 0x2020202020202020L;
@@ -84,6 +91,59 @@ public class HttpRequestDecoder {
             }
             default -> null;
         };
+    }
+
+    private static boolean isTchar(byte value) {
+        return (value >= 'a' && value <= 'z')
+            || (value >= 'A' && value <= 'Z')
+            || (value >= '0' && value <= '9')
+            || switch (value) {
+            case '!', '#', '$', '%', '&', '\'', '*', '+',
+                 '-', '.', '^', '_', '`', '|', '~' -> true;
+            default -> false;
+        };
+    }
+
+    private static final VectorSpecies<Byte> SPECIES = ByteVector.SPECIES_PREFERRED;
+
+    /**
+     * Vector mask for header names allowed chars in HTTP/1.1
+     */
+    private static VectorMask<Byte> tcharMask(ByteVector v) {
+        return v.compare(VectorOperators.EQ, (byte) '!')
+            .or(v.compare(VectorOperators.GE, (byte) '#')
+                .and(v.compare(VectorOperators.LE, (byte) '&')))
+            .or(v.compare(VectorOperators.GE, (byte) '*')
+                .and(v.compare(VectorOperators.LE, (byte) '+')))
+            .or(v.compare(VectorOperators.GE, (byte) '-')
+                .and(v.compare(VectorOperators.LE, (byte) '.')))
+            .or(v.compare(VectorOperators.GE, (byte) '0')
+                .and(v.compare(VectorOperators.LE, (byte) '9')))
+            .or(v.compare(VectorOperators.GE, (byte) 'A')
+                .and(v.compare(VectorOperators.LE, (byte) 'Z')))
+            .or(v.compare(VectorOperators.GE, (byte) '^')
+                .and(v.compare(VectorOperators.LE, (byte) 'z')))
+            .or(v.compare(VectorOperators.EQ, (byte) '\''))
+            .or(v.compare(VectorOperators.EQ, (byte) '|'))
+            .or(v.compare(VectorOperators.EQ, (byte) '~'));
+    }
+
+    private static int firstNonTchar(MemorySegment segment, int offset, int length) {
+        int i = 0;
+        final int loopBound = SPECIES.loopBound(length);
+        for (; i < loopBound; i += SPECIES.length()) {
+            final ByteVector v = ByteVector.fromMemorySegment(SPECIES, segment, offset + i, ByteOrder.nativeOrder());
+            final VectorMask<Byte> invalid = tcharMask(v).not();
+            if (invalid.anyTrue()) {
+                return i + invalid.firstTrue();
+            }
+        }
+        for (; i < length; i++) {
+            if (!isTchar(segment.get(ValueLayout.JAVA_BYTE, offset + i))) {
+                return i;
+            }
+        }
+        return -1;
     }
 
     private TransportBuffer.Reader reader;
@@ -177,11 +237,11 @@ public class HttpRequestDecoder {
 
         // TODO feed headerStart/headerEnd from ProtocolHandler?
 
-        int headerCount = 0;
         int nameStart;
         int nameLength;
         int valueStart;
         int valueLength;
+        int headerCount = 0;
         while (true) {
             if (headerCount >= MAX_HEADER_COUNT) {
                 throw HttpRequestException.TOO_MANY_HEADERS;
@@ -194,18 +254,17 @@ public class HttpRequestDecoder {
             }
 
             nameStart = this.reader.position();
-            nameLength = this.reader.indexOf(COLON);
-            if (nameLength <= 0) { // header name must not be empty
-                throw HttpRequestException.MALFORMED;
-            }
-
             if (this.reader.matchesAsciiIgnoreCase(HOST)) {
                 if (this.host.length() > 0) { // multiple Host headers are not allowed
                     throw HttpRequestException.MALFORMED;
                 }
-                this.reader.skip(nameLength + 1); // +1 for ':'
+                nameLength = HOST.length - 1;
+                this.reader.skip(HOST.length);
                 valueStart = this.reader.position();
                 valueLength = this.reader.indexOf(CR, LF);
+                if (valueLength == -1) {
+                    throw HttpRequestException.MALFORMED; // CRLF
+                }
                 this.host.reset(this.reader, valueStart, valueLength);
                 this.host.trim();
                 if (!HostValidator.isValidHost(this.host)) {
@@ -213,12 +272,15 @@ public class HttpRequestDecoder {
                 }
                 this.reader.skip(valueLength);
             } else if (this.reader.matchesAsciiIgnoreCase(CONTENT_LENGTH)) {
-                this.reader.skip(nameLength + 1); // +1 for ':'
+                nameLength = CONTENT_LENGTH.length - 1;
+                this.reader.skip(CONTENT_LENGTH.length);
+                valueStart = this.reader.position();
                 // parse content length
                 int digits = 0;
                 int value = 0;
-                final int length = this.reader.indexOf(CR, LF);
-                for (int i = 0; i < length; i++) {
+                valueLength = this.reader.indexOf(CR, LF);
+                int i;
+                for (i = 0; i < valueLength; i++) {
                     final int c = this.reader.getUnsignedByte();
                     if (c >= '0' && c <= '9') {
                         value = value * 10 + (c - '0');
@@ -229,17 +291,14 @@ public class HttpRequestDecoder {
                     throw HttpRequestException.MALFORMED; // no digit or CRLF
                 }
                 this.contentLength = value; // predefined header only saved in the contentLength
-                this.reader.skip(2); // CRLF is consumed
-                continue; // Content-Length is a special header, do not add headers
             } else if (this.reader.matchesAsciiIgnoreCase(TRANSFER_ENCODING)) {
-                this.reader.skip(nameLength + 1); // +1 for ':'
-                parseTransferEncoding();
-                continue;
+                nameLength = TRANSFER_ENCODING.length - 1;
+                this.reader.skip(TRANSFER_ENCODING.length);
+                valueStart = this.reader.position();
+                valueLength = this.reader.indexOf(CR, LF);
+                parseTransferEncoding(valueLength);
             } else { // Unknown/vendor headers
-                if (!checkHeaderNameTokens(nameLength)) {
-                    throw HttpRequestException.MALFORMED;
-                }
-                this.reader.skip(1); // +1 for ':'
+                nameLength = parseHeaderName();
                 valueStart = this.reader.position();
                 valueLength = this.reader.indexOf(CR, LF);
                 if (valueLength < 0) {
@@ -250,24 +309,49 @@ public class HttpRequestDecoder {
             if (!this.reader.consume(CR, LF)) { // Every header must end with CRLF
                 throw HttpRequestException.MALFORMED;
             }
+            // header values are saved without trimming
+            // it is lazily trimmed when requested in getHeader method
             addHeader(headerCount++ << 2, nameStart, nameLength, valueStart, valueLength);
             this.headersCount = headerCount;
         }
     }
 
-    private static boolean isToken(byte value) {
-        return (value >= 'a' && value <= 'z')
-            || (value >= 'A' && value <= 'Z')
-            || (value >= '0' && value <= '9')
-            || switch (value) {
-            case '!', '#', '$', '%', '&', '\'', '*', '+',
-                 '-', '.', '^', '_', '`', '|', '~' -> true;
-            default -> false;
-        };
+    private int parseHeaderName() {
+        int nameLength;
+        final int offset = this.reader.blockOffset();
+        final int available = (int) this.reader.segment().byteSize() - offset;
+        final MemorySegment segment = this.reader.segment();
+        final int invalid = firstNonTchar(segment, offset, available);
+        if (invalid >= 0) {
+            final byte value = segment.get(ValueLayout.JAVA_BYTE, offset + invalid);
+            if (value != ':') {
+                throw HttpRequestException.MALFORMED;
+            }
+            if (invalid == 0) { // header name must not be empty
+                throw HttpRequestException.MALFORMED;
+            }
+            nameLength = invalid;
+            this.reader.skip(nameLength + 1); // +1 for ':'
+        } else {
+            this.reader.skip(available); // skip the scanned region
+            nameLength = this.reader.indexOf(COLON);
+            if (nameLength == -1) { // header name must not be empty
+                throw HttpRequestException.MALFORMED;
+            }
+            nameLength += available;
+            if (nameLength == 0) { // header name must not be empty
+                throw HttpRequestException.MALFORMED;
+            }
+            if (!checkHeaderNameTokens(nameLength)) {
+                throw HttpRequestException.MALFORMED;
+            }
+            this.reader.skip(1);
+        }
+        return nameLength;
     }
 
     private boolean checkHeaderNameTokens(int length) {
-        while (length-- > 0 && isToken(this.reader.get())) {
+        while (length-- > 0 && isTchar(this.reader.get())) {
             // skip
         }
         return length == -1;
@@ -295,15 +379,14 @@ public class HttpRequestDecoder {
         this.headers[offset + 3] = valueLength;
     }
 
-    private void parseTransferEncoding() {
-        final int valueLength = this.reader.indexOf(CR, LF);
-        if (valueLength < 0) {
+    private void parseTransferEncoding(int length) {
+        if (length < 0) {
             throw HttpRequestException.MALFORMED;
         }
-        if (valueLength < TRANSFER_CODE_CHUNKED.length) {
+        if (length < TRANSFER_CODE_CHUNKED.length) {
             throw HttpRequestException.MALFORMED;
         }
-        this.reader.skip(valueLength);
+        this.reader.skip(length);
         final int rewind = rewindOWS();
         this.reader.rewind(TRANSFER_CODE_CHUNKED.length);
         if (!this.reader.matchesAsciiIgnoreCase(TRANSFER_CODE_CHUNKED)) {

@@ -400,6 +400,10 @@ public final class TransportBuffer implements AutoCloseable {
             writeAscii(value, 0, value.length());
         }
 
+        /**
+         * Writes only printable ASCII characters to the buffer.
+         * Only for HTTP headers.
+         */
         public void writeAscii(String value, int offset, int length) {
             Objects.checkFromIndexSize(offset, length, value.length());
             ensureHead();
@@ -411,6 +415,7 @@ public final class TransportBuffer implements AutoCloseable {
                 final int end = sourceOffset + count;
                 while (sourceOffset < end) {
                     final char c = value.charAt(sourceOffset++);
+                    // To allow: '\t' => (c < 0x20 && c != '\t') || c > 0x7E
                     if (c > 0x7E || c < 0x20) {
                         throw new IllegalArgumentException("Invalid ASCII character");
                     }
@@ -464,6 +469,7 @@ public final class TransportBuffer implements AutoCloseable {
 
         /**
          * Calculates the byte length of a UTF-8 encoded string
+         *
          * @return byte length
          */
         public static int utf8Length(String value) {
@@ -563,13 +569,16 @@ public final class TransportBuffer implements AutoCloseable {
 
         void position(int position);
 
-        int written(Block block);
-
         int limit();
 
         int remaining();
 
         boolean hasRemaining();
+
+        /**
+         * Returns the offset of the current block
+         */
+        int blockOffset();
 
         byte read();
 
@@ -739,10 +748,10 @@ public final class TransportBuffer implements AutoCloseable {
         /**
          * Retrieves the string at the specified position without modifying the cursor.
          *
-         * @param offset the zero-based index of the first byte to retrieve
-         * @param length the number of bytes to retrieve
+         * @param offset  the zero-based index of the first byte to retrieve
+         * @param length  the number of bytes to retrieve
          * @param charset the charset to use
-         * @param trim whether to trim the string
+         * @param trim    whether to trim the string
          * @return the string located at the specified position
          */
         String getString(int offset, int length, Charset charset, boolean trim);
@@ -750,10 +759,10 @@ public final class TransportBuffer implements AutoCloseable {
         /**
          * Copies the data at the specified position to the given destination array without modifying the cursor
          *
-         * @param offset absolute offset for the Reader
-         * @param destination the destination array
+         * @param offset            absolute offset for the Reader
+         * @param destination       the destination array
          * @param destinationOffset the zero-based index of the first destination array element
-         * @param length the number of bytes to copy
+         * @param length            the number of bytes to copy
          */
         void copyTo(int offset, byte[] destination, int destinationOffset, int length);
 
@@ -765,6 +774,8 @@ public final class TransportBuffer implements AutoCloseable {
          * @throws IOException if an I/O error occurs
          */
         int write(WritableByteChannel channel) throws IOException;
+
+        MemorySegment segment();
 
         void close();
 
@@ -801,8 +812,7 @@ public final class TransportBuffer implements AutoCloseable {
             locate(position);
         }
 
-        @Override
-        public int written(Block block) {
+        protected int written(Block block) {
             return block == this.head.writer.current ? this.head.writer.currentWritten : payloadSize;
         }
 
@@ -813,12 +823,17 @@ public final class TransportBuffer implements AutoCloseable {
 
         @Override
         public int remaining() {
-            return limit() - this.position;
+            return this.head.writer.totalWritten - this.position;
         }
 
         @Override
         public boolean hasRemaining() {
-            return this.position < limit();
+            return this.position < this.head.writer.totalWritten;
+        }
+
+        @Override
+        public int blockOffset() {
+            return this.currentOffset;
         }
 
         @Override
@@ -1399,6 +1414,12 @@ public final class TransportBuffer implements AutoCloseable {
                 this.position += written;
             }
             return totalWritten;
+        }
+
+        @Override
+        public MemorySegment segment() {
+            // TODO check currentOffset < payloadSize
+            return this.current.payload.asReadOnly();
         }
 
         @Override

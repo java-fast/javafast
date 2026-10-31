@@ -5,7 +5,7 @@ import java.util.Objects;
 
 public final class StringMap {
 
-    private String[] entries;
+    private String[] entries; // [key1][value2][key2][value2]...
     private int size;
 
     public StringMap(int initialCapacity) {
