@@ -656,13 +656,14 @@ public final class TransportBuffer implements AutoCloseable {
 
         /**
          * Checks if the next characters match the expected string bytes, ignoring the ASCII case
-         *
+         * expectes bytes must be in lower case
          * @param expected the expected string bytes
          */
         boolean matchesAsciiIgnoreCase(byte[] expected);
 
         /**
          * Checks if the next characters match the expected string bytes, ignoring the ASCII case
+         * expectes bytes must be in lower case
          *
          * @param expected the expected string bytes
          * @param offset   the offset within the expected string
@@ -1134,14 +1135,10 @@ public final class TransportBuffer implements AutoCloseable {
 
                 for (int i = 0; i < count; i++) {
                     byte actual = segment.get(ValueLayout.JAVA_BYTE, blockOffset + i);
-                    byte expectedChar = expected[valueOffset + i];
                     if (actual >= 'A' && actual <= 'Z') {
                         actual |= 0x20;
                     }
-                    if (expectedChar >= 'A' && expectedChar <= 'Z') {
-                        expectedChar |= 0x20;
-                    }
-                    if (actual != expectedChar) {
+                    if (actual != expected[valueOffset + i]) {
                         return false;
                     }
                 }
