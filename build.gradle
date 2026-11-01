@@ -52,8 +52,23 @@ jmh {
 
 }
 
+def customJvmArgs = [
+  '--add-modules=jdk.incubator.vector'
+]
+
 tasks.withType(JavaCompile).configureEach {
-    options.compilerArgs += ['--add-modules', 'jdk.incubator.vector']
+    options.compilerArgs.addAll([
+      '--add-modules',
+      'jdk.incubator.vector'
+    ])
+}
+
+tasks.withType(Test).configureEach {
+    jvmArgs(customJvmArgs)
+}
+
+tasks.withType(JavaExec).configureEach {
+    jvmArgs(customJvmArgs)
 }
 
 test {
