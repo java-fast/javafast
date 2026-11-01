@@ -4,6 +4,7 @@ import io.javafast.test.TransportUtils
 import spock.lang.Specification
 
 import java.nio.BufferOverflowException
+import java.nio.charset.StandardCharsets
 
 class TransportBufferWriterSpec extends Specification implements TransportUtils {
 
@@ -236,6 +237,112 @@ class TransportBufferWriterSpec extends Specification implements TransportUtils 
 
         and:
         writer.totalWritten() == 0
+    }
+
+    def 'should fork the request when its boundary is in the middle of a block'() {
+        given:
+        def buffer = TransportBuffer.create(BLOCK_SIZE, 4)
+        def writer = buffer.writer()
+        writer.writeAscii('first-requestsecond-request')
+
+        when:
+        def fork = writer.fork('first-request'.size())
+
+        then:
+        readAll(fork) == 'second-request'.getBytes(StandardCharsets.US_ASCII)
+
+        cleanup:
+        buffer.close()
+    }
+
+    def 'should fork the request when its boundary is exactly at the end of a block'() {
+        given:
+        def buffer = TransportBuffer.create(BLOCK_SIZE, 4)
+        def writer = buffer.writer()
+        def first = 'a' * PAYLOAD_SIZE
+        writer.writeAscii(first + 'second-request')
+
+        when:
+        def fork = writer.fork(first.size())
+
+        then:
+        readAll(fork) == 'second-request'.getBytes(StandardCharsets.US_ASCII)
+
+        cleanup:
+        buffer.close()
+    }
+
+    def 'should preserve all bytes when the source spans multiple blocks'() {
+        given:
+        def buffer = TransportBuffer.create(BLOCK_SIZE, 64)
+        def writer = buffer.writer()
+        def source = ('source-' * (PAYLOAD_SIZE + 3)).getBytes(StandardCharsets.US_ASCII)
+
+        when:
+        writer.writeBytes(source)
+
+        then:
+        readAll(writer) == source
+
+        cleanup:
+        buffer.close()
+    }
+
+    def 'should preserve all bytes when the fork spans multiple blocks'() {
+        given:
+        def buffer = TransportBuffer.create(BLOCK_SIZE, 32)
+        def writer = buffer.writer()
+        def prefix = 'prefix'
+        def request = ('forked-request-' * (PAYLOAD_SIZE + 3)).getBytes(StandardCharsets.US_ASCII)
+        writer.writeAscii(prefix)
+        writer.writeBytes(request)
+
+        when:
+        def fork = writer.fork(prefix.size())
+
+        then:
+        readAll(fork) == request
+
+        cleanup:
+        buffer.close()
+    }
+
+    def 'should not change the original reader position when forking'() {
+        given:
+        def buffer = TransportBuffer.create(BLOCK_SIZE, 32)
+        def writer = buffer.writer()
+        writer.writeAscii('prefix-and-request')
+        def reader = writer.reader()
+        reader.position(3)
+
+        when:
+        def fork = writer.fork('prefix-'.size())
+
+        then:
+        reader.position() == 3
+        readAll(fork) == 'and-request'.getBytes(StandardCharsets.US_ASCII)
+
+        cleanup:
+        buffer.close()
+    }
+
+    def 'should keep fork bytes after releasing the original writer'() {
+        given:
+        def buffer = TransportBuffer.create(BLOCK_SIZE, 64)
+        def writer = buffer.writer()
+        def original = 'original-request-' * (PAYLOAD_SIZE + 2)
+        writer.writeAscii(original)
+        def expected = original.substring('original-'.size()).getBytes(StandardCharsets.US_ASCII)
+
+        when:
+        def fork = writer.fork('original-'.size())
+        writer.release()
+
+        then:
+        readAll(fork) == expected
+
+        cleanup:
+        buffer.close()
     }
 
 

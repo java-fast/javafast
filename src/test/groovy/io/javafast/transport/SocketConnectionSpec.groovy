@@ -1,13 +1,14 @@
 package io.javafast.transport
 
 import io.javafast.test.TestUtils
+import io.javafast.test.TransportUtils
 import spock.lang.Specification
 import spock.lang.Timeout
 
 import java.nio.charset.StandardCharsets
 
 @Timeout(5)
-class SocketConnectionSpec extends Specification implements TestUtils {
+class SocketConnectionSpec extends Specification implements TestUtils, TransportUtils {
 
     def 'should process two requests sent in a single socket write'() {
         given:
@@ -44,4 +45,5 @@ class SocketConnectionSpec extends Specification implements TestUtils {
         println(response)
 
     }
+
 }
