@@ -4,11 +4,8 @@ import java.io.IOException;
 import java.nio.BufferOverflowException;
 import java.nio.channels.SelectionKey;
 import java.nio.channels.SocketChannel;
-import java.util.logging.Logger;
 
 final class SocketConnection {
-
-    private static final Logger log = Logger.getLogger(SocketConnection.class.getName());
 
     private static final int MAX_READS_PER_TURN = 16;
     private static final int MAX_READ_BYTES_PER_TURN = 64 * 1024;
@@ -31,13 +28,6 @@ final class SocketConnection {
     SocketConnection writableNext;
     boolean writableQueued;
 
-    /**
-     * Instrumentation for benchmarking
-     */
-    private long multiRequestReads;
-    private long discardedBytes;
-
-
     SocketConnection(SelectionKey key, SocketChannel channel, ProtocolHandler protocolHandler, long now) {
         this.key = key;
         this.channel = channel;
@@ -56,46 +46,47 @@ final class SocketConnection {
         int reads = 0;
         int bytes = 0;
         while (reads < MAX_READS_PER_TURN && bytes < MAX_READ_BYTES_PER_TURN) {
-            final int written;
-            try {
-                written = this.pendingBytes > 0
-                    ? this.pendingBytes
-                    : this.writer.read(this.channel);
-            } catch (BufferOverflowException e) {
-                discard();
-                throw ConnectionClosedException.get(e);
-            }
-            if (written == -1) {
-                discard();
-                throw ConnectionClosedException.get();
-            }
-            if (written == 0) {
-                break;
+            if (this.pendingBytes == 0) { // read from socket
+                final int written;
+                try {
+                    written = this.writer.read(this.channel);
+                } catch (BufferOverflowException e) {
+                    discard();
+                    throw ConnectionClosedException.get(e);
+                }
+                if (written == -1) {
+                    discard();
+                    throw ConnectionClosedException.get();
+                }
+                if (written == 0) {
+                    break;
+                }
+                this.pendingBytes = written;
+                this.lastReadNanos = now;
             }
 
-            bytes += written;
+            final int available = this.pendingBytes;
+            this.pendingBytes = 0;
+            bytes += available;
             reads++;
-            this.lastReadNanos = now;
-            // FIXME a socket read can have multiple HTTP requests!
-            // In this case, we should know the first request boundary (where it finishes)
-            // Then, discard the other requests' bytes and publish the first one
-            // Because a TransportBuffer.Block must always have a single HTTP request!
-            this.protocolHandler.onBytes(this.writer.reader(), written);
+
+            this.protocolHandler.onBytes(this.writer.reader(), available);
             final int requestLength = this.protocolHandler.requestLength();
             if (this.protocolHandler.payloadComplete()) {
+                final int remaining = this.writer.totalWritten() - requestLength;
                 TransportBuffer.Writer fork = null;
-                this.pendingBytes = this.writer.totalWritten() - requestLength;
-                if (this.pendingBytes > 0) {
-                    this.multiRequestReads++;
-                    this.discardedBytes += this.pendingBytes;
-                    log.info(String.format("Discarded %d bytes from multi-request read: %d", this.discardedBytes, this.multiRequestReads));
+                if (remaining > 0) {
                     fork = this.writer.fork(requestLength);
                 }
                 if (publish()) {
                     this.writer = fork;
+                    this.pendingBytes = remaining;
                     return true;
                 }
-                return false; // publish failed
+                if (fork != null) {
+                    fork.release(); // publish failed, release the fork if any
+                }
+                return false;
             }
         }
 
