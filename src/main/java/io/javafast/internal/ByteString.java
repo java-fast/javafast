@@ -147,7 +147,8 @@ public final class ByteString {
                 trimStart++;
             }
             int trimEnd = this.length;
-            while (trimEnd > 0 && (this.reader.consume(SPACE) || this.reader.consume(HTAB))) { // trailing OWS
+            this.reader.skip(trimEnd - trimStart);
+            while (trimEnd > 0 && (this.reader.unconsume(SPACE) || this.reader.unconsume(HTAB))) { // trailing OWS
                 this.length--;
                 trimEnd--;
             }
