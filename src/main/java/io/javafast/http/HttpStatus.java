@@ -1,9 +1,6 @@
 package io.javafast.http;
 
 import java.nio.charset.StandardCharsets;
-import java.util.Map;
-import java.util.stream.Collectors;
-import java.util.stream.Stream;
 
 /**
  * Standard HTTP status codes plus UNKNOWN for non-standard codes.
@@ -70,7 +67,7 @@ public enum HttpStatus {
     NETWORK_AUTHENTICATION_REQUIRED(511, "Network Authentication Required"),
     UNKNOWN(-1, "Unknown HTTP code");
 
-    private static final Map<Integer, HttpStatus> BY_CODE = Stream.of(values()).collect(Collectors.toUnmodifiableMap(s -> s.code, s -> s));
+    private static final HttpStatus[] BY_CODE = createCodeLookup();
     private final int code;
     private final String message;
     private final byte[] wireBytes;
@@ -121,7 +118,17 @@ public enum HttpStatus {
     }
 
     public static HttpStatus forStatus(int code) {
-        return BY_CODE.getOrDefault(code, UNKNOWN);
+        return code >= 0 && code < BY_CODE.length ? BY_CODE[code] : UNKNOWN;
+    }
+
+    private static HttpStatus[] createCodeLookup() {
+        final HttpStatus[] lookup = new HttpStatus[600];
+        for (HttpStatus status : values()) {
+            if (status.code >= 0 && status.code < lookup.length) {
+                lookup[status.code] = status;
+            }
+        }
+        return lookup;
     }
 
     @Override

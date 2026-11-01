@@ -42,7 +42,8 @@ public class HttpRequestDecoder {
     private static final byte HTAB = '\t';
     private static final byte COLON = ':';
 
-    private static final byte[] HTTP_VERSION = new byte[]{'H', 'T', 'T', 'P', '/', '1', '.', '1'};
+    private static final byte[] CRLF = new byte[]{CR, LF};
+    private static final byte[] HTTP_VERSION = new byte[]{'H', 'T', 'T', 'P', '/', '1', '.', '1', CR, LF};
     private static final byte[] TRANSFER_CODE_CHUNKED = new byte[]{'c', 'h', 'u', 'n', 'k', 'e', 'd'};
 
     /**
@@ -226,26 +227,19 @@ public class HttpRequestDecoder {
         this.target.reset(this.reader, this.targetStart, this.targetLength);
         this.reader.skip(this.targetLength + 1);
 
-        if (!this.reader.consumeAscii(HTTP_VERSION)) {
+        if (!this.reader.consumeAscii(HTTP_VERSION)) { // wrong HTTP version or not ending with CRLF
             throw HttpRequestException.NOT_SUPPORTED;
-        }
-
-        if (!this.reader.consume(CR, LF)) {
-            throw HttpRequestException.MALFORMED;
         }
     }
 
     private void parseHeaders() {
         this.headersStart = this.reader.position();
-
-        // TODO feed headerStart/headerEnd from ProtocolHandler?
-
         while (true) {
             if (this.headersCount >= MAX_HEADER_COUNT) {
                 throw HttpRequestException.TOO_MANY_HEADERS;
             }
             // Empty line => end of headers
-            if (this.reader.consume(CR, LF)) {
+            if (this.reader.consumeAscii(CRLF)) {
                 this.headersLength = this.reader.position() - this.headersStart;
                 this.bodyStart = this.reader.position();
                 return;
@@ -263,7 +257,6 @@ public class HttpRequestDecoder {
             }
         }
     }
-
 
 
     private void parseHostHeader() {
@@ -366,7 +359,8 @@ public class HttpRequestDecoder {
         final int available = (int) segment.byteSize();
         final int invalid = firstNonTchar(segment, available);
         if (invalid >= 0) {
-            final byte value = segment.get(ValueLayout.JAVA_BYTE, invalid);
+            this.reader.skip(invalid);
+            final byte value = this.reader.peek();
             if (value != COLON) {
                 throw HttpRequestException.MALFORMED;
             }
@@ -374,7 +368,7 @@ public class HttpRequestDecoder {
                 throw HttpRequestException.MALFORMED;
             }
             nameLength = invalid;
-            this.reader.skip(nameLength + 1); // +1 for ':'
+            this.reader.skip(1); // +1 for ':'
         } else {
             this.reader.skip(available); // skip the scanned region
             nameLength = this.reader.indexOf(COLON);

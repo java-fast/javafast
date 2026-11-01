@@ -8,6 +8,8 @@ import java.util.*;
  */
 final class RoutePattern {
 
+    public static final char SLASH = '/';
+
     private final boolean isRawPathSlash;
     private final boolean isRawPathEndsWithSlash;
     private final List<Segment> segments;
@@ -25,7 +27,7 @@ final class RoutePattern {
                          boolean multipleSlashes,
                          boolean caseInsensitive) {
         this.isRawPathSlash = rawPath.equals("/");
-        this.isRawPathEndsWithSlash = rawPath.charAt(rawPath.length() - 1) == '/';
+        this.isRawPathEndsWithSlash = rawPath.charAt(rawPath.length() - 1) == SLASH;
         this.segments = segments;
         this.wildcard = wildcard;
         this.trailingWildcard = trailingWildcard;
@@ -99,15 +101,15 @@ final class RoutePattern {
     }
 
     private boolean sameTrailingSlash(boolean isSlash, boolean isLastCharSlash, ByteString request) {
-        if (isSlash) return request.contentEquals('/');
-        return isLastCharSlash == request.endsWith('/');
+        if (isSlash) return request.contentEquals(SLASH);
+        return isLastCharSlash == request.endsWith(SLASH);
     }
 
     private int split(PathSplits state, ByteString path) {
         int count = 0;
         int start = 0;
         for (int i = 0; i <= path.length(); i++) {
-            if (i == path.length() || path.byteAt(i) == '/') {
+            if (i == path.length() || path.byteAt(i) == SLASH) {
                 if (i > start) state.set(count++, start, i - start);
                 else if (!this.multipleSlashes && i < path.length() && i == start && start > 0) {
                     state.set(count++, start, 0); // empty path segments are meaningful when multiple slashes are not collapsed
@@ -125,7 +127,7 @@ final class RoutePattern {
         final StringBuilder current = new StringBuilder();
         for (int i = 0; i < path.length(); i++) {
             final char c = path.charAt(i);
-            if (c == '/') {
+            if (c == SLASH) {
                 if (current.length() > 0) {
                     result.add(parseSegment(current.toString(), rawPath, names));
                     current.setLength(0);
