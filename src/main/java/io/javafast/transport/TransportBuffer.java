@@ -575,11 +575,6 @@ public final class TransportBuffer implements AutoCloseable {
 
         boolean hasRemaining();
 
-        /**
-         * Returns the offset of the current block
-         */
-        int blockOffset();
-
         byte read();
 
         /**
@@ -775,6 +770,10 @@ public final class TransportBuffer implements AutoCloseable {
          */
         int write(WritableByteChannel channel) throws IOException;
 
+        /**
+         * Returns the current block memory segment as read-only
+         * Only the available data is accessible
+         */
         MemorySegment segment();
 
         void close();
@@ -812,10 +811,6 @@ public final class TransportBuffer implements AutoCloseable {
             locate(position);
         }
 
-        protected int written(Block block) {
-            return block == this.head.writer.current ? this.head.writer.currentWritten : payloadSize;
-        }
-
         @Override
         public int limit() {
             return this.head.writer.totalWritten;
@@ -831,9 +826,12 @@ public final class TransportBuffer implements AutoCloseable {
             return this.position < this.head.writer.totalWritten;
         }
 
-        @Override
-        public int blockOffset() {
-            return this.currentOffset;
+        protected int written(Block block) {
+            return block == this.head.writer.current ? this.head.writer.currentWritten : payloadSize;
+        }
+
+        protected int blockRemaining() {
+            return written(this.current) - this.currentOffset;
         }
 
         @Override
@@ -1418,8 +1416,7 @@ public final class TransportBuffer implements AutoCloseable {
 
         @Override
         public MemorySegment segment() {
-            // TODO check currentOffset < payloadSize
-            return this.current.payload.asReadOnly();
+            return this.current.payload.asSlice(this.currentOffset, blockRemaining()).asReadOnly();
         }
 
         @Override

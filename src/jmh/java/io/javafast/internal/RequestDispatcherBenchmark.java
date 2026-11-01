@@ -8,22 +8,23 @@ import java.util.concurrent.TimeUnit;
 
 /**
  * Benchmark                                                            Mode  Cnt    Score    Error   Units
- * RequestDispatcherBenchmark.dispatchGet                               avgt    5  106.803 ±  0.466   ns/op
+ * RequestDispatcherBenchmark.dispatchGet                               avgt    5  110.082 ±  9.049   ns/op
  * RequestDispatcherBenchmark.dispatchGet:·gc.alloc.rate                avgt    5   ≈ 10⁻⁴           MB/sec
  * RequestDispatcherBenchmark.dispatchGet:·gc.alloc.rate.norm           avgt    5   ≈ 10⁻⁵             B/op
  * RequestDispatcherBenchmark.dispatchGet:·gc.count                     avgt    5      ≈ 0           counts
- * RequestDispatcherBenchmark.dispatchGetComposite                      avgt    5  120.807 ±  0.443   ns/op
+ * RequestDispatcherBenchmark.dispatchGetComposite                      avgt    5  124.281 ±  3.721   ns/op
  * RequestDispatcherBenchmark.dispatchGetComposite:·gc.alloc.rate       avgt    5   ≈ 10⁻⁴           MB/sec
  * RequestDispatcherBenchmark.dispatchGetComposite:·gc.alloc.rate.norm  avgt    5   ≈ 10⁻⁵             B/op
  * RequestDispatcherBenchmark.dispatchGetComposite:·gc.count            avgt    5      ≈ 0           counts
- * RequestDispatcherBenchmark.dispatchNotFound                          avgt    5  240.346 ±  1.364   ns/op
+ * RequestDispatcherBenchmark.dispatchNotFound                          avgt    5  175.886 ±  1.019   ns/op
  * RequestDispatcherBenchmark.dispatchNotFound:·gc.alloc.rate           avgt    5   ≈ 10⁻⁴           MB/sec
  * RequestDispatcherBenchmark.dispatchNotFound:·gc.alloc.rate.norm      avgt    5   ≈ 10⁻⁵             B/op
  * RequestDispatcherBenchmark.dispatchNotFound:·gc.count                avgt    5      ≈ 0           counts
- * RequestDispatcherBenchmark.dispatchPost                              avgt    5  175.853 ±  0.626   ns/op
- * RequestDispatcherBenchmark.dispatchPost:·gc.alloc.rate               avgt    5   ≈ 10⁻⁴           MB/sec
- * RequestDispatcherBenchmark.dispatchPost:·gc.alloc.rate.norm          avgt    5   ≈ 10⁻⁵             B/op
- * RequestDispatcherBenchmark.dispatchPost:·gc.count                    avgt    5      ≈ 0           counts
+ * RequestDispatcherBenchmark.dispatchPost                              avgt    5  181.641 ±  1.961   ns/op
+ * RequestDispatcherBenchmark.dispatchPost:·gc.alloc.rate               avgt    5  504.027 ±  5.442  MB/sec
+ * RequestDispatcherBenchmark.dispatchPost:·gc.alloc.rate.norm          avgt    5   96.000 ±  0.001    B/op
+ * RequestDispatcherBenchmark.dispatchPost:·gc.count                    avgt    5  168.000           counts
+ * RequestDispatcherBenchmark.dispatchPost:·gc.time                     avgt    5   45.000               ms
  */
 @State(Scope.Thread)
 @BenchmarkMode(Mode.AverageTime)

@@ -128,18 +128,18 @@ public class HttpRequestDecoder {
             .or(v.compare(VectorOperators.EQ, (byte) '~'));
     }
 
-    private static int firstNonTchar(MemorySegment segment, int offset, int length) {
+    private static int firstNonTchar(MemorySegment segment, int length) {
         int i = 0;
         final int loopBound = SPECIES.loopBound(length);
         for (; i < loopBound; i += SPECIES.length()) {
-            final ByteVector v = ByteVector.fromMemorySegment(SPECIES, segment, offset + i, ByteOrder.nativeOrder());
+            final ByteVector v = ByteVector.fromMemorySegment(SPECIES, segment, i, ByteOrder.nativeOrder());
             final VectorMask<Byte> invalid = tcharMask(v).not();
             if (invalid.anyTrue()) {
                 return i + invalid.firstTrue();
             }
         }
         for (; i < length; i++) {
-            if (!isTchar(segment.get(ValueLayout.JAVA_BYTE, offset + i))) {
+            if (!isTchar(segment.get(ValueLayout.JAVA_BYTE, i))) {
                 return i;
             }
         }
@@ -237,13 +237,8 @@ public class HttpRequestDecoder {
 
         // TODO feed headerStart/headerEnd from ProtocolHandler?
 
-        int nameStart;
-        int nameLength;
-        int valueStart;
-        int valueLength;
-        int headerCount = 0;
         while (true) {
-            if (headerCount >= MAX_HEADER_COUNT) {
+            if (this.headersCount >= MAX_HEADER_COUNT) {
                 throw HttpRequestException.TOO_MANY_HEADERS;
             }
             // Empty line => end of headers
@@ -252,79 +247,93 @@ public class HttpRequestDecoder {
                 this.bodyStart = this.reader.position();
                 return;
             }
-
-            nameStart = this.reader.position();
             if (this.reader.matchesAsciiIgnoreCase(HOST)) {
-                if (this.host.length() > 0) { // multiple Host headers are not allowed
-                    throw HttpRequestException.MALFORMED;
-                }
-                nameLength = HOST.length - 1;
-                this.reader.skip(HOST.length);
-                valueStart = this.reader.position();
-                valueLength = this.reader.indexOf(CR, LF);
-                if (valueLength == -1) {
-                    throw HttpRequestException.MALFORMED; // CRLF
-                }
-                this.host.reset(this.reader, valueStart, valueLength);
-                this.host.trim();
-                if (!HostValidator.isValidHost(this.host)) {
-                    throw HttpRequestException.MALFORMED;
-                }
-                this.reader.skip(valueLength);
+                parseHostHeader();
             } else if (this.reader.matchesAsciiIgnoreCase(CONTENT_LENGTH)) {
-                nameLength = CONTENT_LENGTH.length - 1;
-                this.reader.skip(CONTENT_LENGTH.length);
-                valueStart = this.reader.position();
-                // parse content length
-                int digits = 0;
-                int value = 0;
-                valueLength = this.reader.indexOf(CR, LF);
-                int i;
-                for (i = 0; i < valueLength; i++) {
-                    final int c = this.reader.getUnsignedByte();
-                    if (c >= '0' && c <= '9') {
-                        value = value * 10 + (c - '0');
-                        digits++;
-                    }
-                }
-                if (digits == 0) {
-                    throw HttpRequestException.MALFORMED; // no digit or CRLF
-                }
-                this.contentLength = value; // predefined header only saved in the contentLength
+                parseContentLength();
             } else if (this.reader.matchesAsciiIgnoreCase(TRANSFER_ENCODING)) {
-                nameLength = TRANSFER_ENCODING.length - 1;
-                this.reader.skip(TRANSFER_ENCODING.length);
-                valueStart = this.reader.position();
-                valueLength = this.reader.indexOf(CR, LF);
-                parseTransferEncoding(valueLength);
+                parseTransferEncoding();
             } else { // Unknown/vendor headers
-                nameLength = parseHeaderName();
-                valueStart = this.reader.position();
-                valueLength = this.reader.indexOf(CR, LF);
-                if (valueLength < 0) {
-                    throw HttpRequestException.MALFORMED;
-                }
-                this.reader.skip(valueLength); // value can have multi values like: 123, abc, def
+                parseHeader();
             }
-            if (!this.reader.consume(CR, LF)) { // Every header must end with CRLF
-                throw HttpRequestException.MALFORMED;
-            }
-            // header values are saved without trimming
-            // it is lazily trimmed when requested in getHeader method
-            addHeader(headerCount++ << 2, nameStart, nameLength, valueStart, valueLength);
-            this.headersCount = headerCount;
         }
     }
 
-    private int parseHeaderName() {
+    private void parseHostHeader() {
+        if (this.host.length() > 0) { // multiple Host headers are not allowed
+            throw HttpRequestException.MALFORMED;
+        }
+        final int nameStart = this.reader.position();
+        final int nameLength = HOST.length - 1;
+        final int valueStart = nameStart + HOST.length;
+        this.reader.skip(HOST.length);
+        final int valueLength = this.reader.indexOf(CR, LF);
+        if (valueLength < 0) {
+            throw HttpRequestException.MALFORMED; // no CRLF
+        }
+        this.host.reset(this.reader, valueStart, valueLength);
+        this.host.trim();
+        if (!HostValidator.isValidHost(this.host)) {
+            throw HttpRequestException.MALFORMED;
+        }
+        this.reader.skip(valueLength + 2); // + CRLF
+        addHeader(this.headersCount++ << 2, nameStart, nameLength, valueStart, valueLength);
+    }
+
+    private void parseContentLength() {
+        final int nameStart = this.reader.position();
+        final int nameLength = CONTENT_LENGTH.length - 1;
+        final int valueStart = nameStart + CONTENT_LENGTH.length;
+        this.reader.skip(CONTENT_LENGTH.length);
+        final int valueLength = this.reader.indexOf(CR, LF);
+
+        int digits = 0;
+        int value = 0;
+        for (int i = 0; i < valueLength; i++) {
+            final int c = this.reader.getUnsignedByte();
+            if (c >= '0' && c <= '9') {
+                value = value * 10 + (c - '0');
+                digits++;
+            }
+        }
+        if (digits == 0) {
+            throw HttpRequestException.MALFORMED; // no digit or CRLF
+        }
+        this.contentLength = value;
+        this.reader.skip(2); // + CRLF
+        addHeader(this.headersCount++ << 2, nameStart, nameLength, valueStart, valueLength);
+    }
+
+    private void parseTransferEncoding() {
+        final int nameStart = this.reader.position();
+        final int nameLength = TRANSFER_ENCODING.length - 1;
+        final int valueStart = nameStart + TRANSFER_ENCODING.length;
+        this.reader.skip(TRANSFER_ENCODING.length);
+        final int valueLength = this.reader.indexOf(CR, LF);
+        if (valueLength < TRANSFER_CODE_CHUNKED.length) {
+            throw HttpRequestException.MALFORMED;
+        }
+
+        this.reader.skip(valueLength);
+        final int rewind = rewindOWS();
+        this.reader.rewind(TRANSFER_CODE_CHUNKED.length);
+        if (!this.reader.matchesAsciiIgnoreCase(TRANSFER_CODE_CHUNKED)) {
+            throw HttpRequestException.UNSUPPORTED_TRANSFER_ENCODING;
+        }
+        this.chunked = true;
+        this.reader.skip(TRANSFER_CODE_CHUNKED.length + rewind + 2); // must skip amount
+        addHeader(this.headersCount++ << 2, nameStart, nameLength, valueStart, valueLength);
+    }
+
+    private void parseHeader() {
+        final int nameStart = this.reader.position();
         int nameLength;
-        final int offset = this.reader.blockOffset();
-        final int available = (int) this.reader.segment().byteSize() - offset;
         final MemorySegment segment = this.reader.segment();
-        final int invalid = firstNonTchar(segment, offset, available);
+        final int available = (int) segment.byteSize();
+        final int invalid = firstNonTchar(segment, available);
         if (invalid >= 0) {
-            final byte value = segment.get(ValueLayout.JAVA_BYTE, offset + invalid);
-            if (value != ':') {
+            final byte value = segment.get(ValueLayout.JAVA_BYTE, invalid);
+            if (value != COLON) {
                 throw HttpRequestException.MALFORMED;
             }
             if (invalid == 0) { // header name must not be empty
@@ -342,58 +351,43 @@ public class HttpRequestDecoder {
             if (nameLength == 0) { // header name must not be empty
                 throw HttpRequestException.MALFORMED;
             }
-            if (!checkHeaderNameTokens(nameLength)) {
+            if (!scalarHeaderNameCheck(nameLength)) {
                 throw HttpRequestException.MALFORMED;
             }
             this.reader.skip(1);
         }
-        return nameLength;
+        final int valueStart = this.reader.position();
+        final int valueLength = this.reader.indexOf(CR, LF);
+        if (valueLength < 0) {
+            throw HttpRequestException.MALFORMED;
+        }
+        this.reader.skip(valueLength + 2); // + CRLF
+        addHeader(this.headersCount++ << 2, nameStart, nameLength, valueStart, valueLength);
     }
 
-    private boolean checkHeaderNameTokens(int length) {
+    private boolean scalarHeaderNameCheck(int length) {
         while (length-- > 0 && isTchar(this.reader.get())) {
             // skip
         }
         return length == -1;
     }
 
-    private void skipOWS() {
-        while (this.reader.consume(SPACE) || this.reader.consume(HTAB)) {
-            // leading OWS
-        }
-    }
-
     private int rewindOWS() {
         int rewind = 0;
         while (this.reader.unconsume(SPACE) || this.reader.unconsume(HTAB)) {
-            // trailing OWS
-            rewind++;
+            rewind++; // trailing OWS
         }
         return rewind;
     }
 
+    // header values are saved without trimming
+    // it is lazily trimmed when requested in getHeader method
+    // NOTE: header values can have multi values like: 123, abc, def
     private void addHeader(int offset, int nameStart, int nameLength, int valueStart, int valueLength) {
         this.headers[offset] = nameStart;
         this.headers[offset + 1] = nameLength;
         this.headers[offset + 2] = valueStart;
         this.headers[offset + 3] = valueLength;
-    }
-
-    private void parseTransferEncoding(int length) {
-        if (length < 0) {
-            throw HttpRequestException.MALFORMED;
-        }
-        if (length < TRANSFER_CODE_CHUNKED.length) {
-            throw HttpRequestException.MALFORMED;
-        }
-        this.reader.skip(length);
-        final int rewind = rewindOWS();
-        this.reader.rewind(TRANSFER_CODE_CHUNKED.length);
-        if (!this.reader.matchesAsciiIgnoreCase(TRANSFER_CODE_CHUNKED)) {
-            throw HttpRequestException.UNSUPPORTED_TRANSFER_ENCODING;
-        }
-        this.reader.skip(TRANSFER_CODE_CHUNKED.length + rewind); // keep position aligned
-        this.chunked = true;
     }
 
     private void parseBody() {
