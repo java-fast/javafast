@@ -240,6 +240,7 @@ public final class TransportBuffer implements AutoCloseable {
         public void release() {
             this.writer.reset();
             this.reader.reset();
+            this.reader.limit(-1);
             int current = this.index;
             while (current != EMPTY_LINK) {
                 blocks[current].byteBuffer.clear();
@@ -501,6 +502,84 @@ public final class TransportBuffer implements AutoCloseable {
             return byteLength;
         }
 
+        /**
+         * Write the content of the Reader to this writer
+         */
+        public void write(Reader source, int offset, int length) {
+            Objects.requireNonNull(source);
+
+            if (!(source instanceof ReaderImpl reader)) {
+                throw new IllegalArgumentException("Unsupported Reader implementation");
+            }
+            if (offset < 0 || length < 0 || length > reader.limit() - offset) {
+                throw new IndexOutOfBoundsException();
+            }
+            if (length == 0) {
+                return;
+            }
+
+            Block sourceBlock = reader.head;
+            int sourceOffset = offset;
+
+            // Locate the source block without changing the Reader cursor.
+            while (sourceBlock != null) {
+                final int written = reader.written(sourceBlock);
+                if (sourceOffset < written) {
+                    break;
+                }
+
+                sourceOffset -= written;
+                sourceBlock = sourceBlock.next();
+            }
+
+            ensureHead();
+
+            int remaining = length;
+
+            while (remaining > 0) {
+                if (sourceBlock == null) {
+                    throw new IllegalStateException("Source buffer chain ended unexpectedly");
+                }
+
+                final int sourceAvailable =
+                    reader.written(sourceBlock) - sourceOffset;
+
+                if (sourceAvailable == 0) {
+                    sourceBlock = sourceBlock.next();
+                    sourceOffset = 0;
+                    continue;
+                }
+
+                ensureWritableBlock();
+
+                final int count = Math.min(
+                    remaining,
+                    Math.min(
+                        sourceAvailable,
+                        payloadSize - this.currentWritten
+                    )
+                );
+
+                MemorySegment.copy(
+                    sourceBlock.payload,
+                    sourceOffset,
+                    this.current.payload,
+                    this.currentWritten,
+                    count
+                );
+
+                sourceOffset += count;
+                this.currentWritten += count;
+                this.totalWritten += count;
+                remaining -= count;
+
+                if (sourceOffset == reader.written(sourceBlock)) {
+                    sourceBlock = sourceBlock.next();
+                    sourceOffset = 0;
+                }
+            }
+        }
+
         private void writeEncodedByte(int value) {
             ensureWritableBlock();
             this.current.payload.set(ValueLayout.JAVA_BYTE, this.currentWritten++, (byte) value);
@@ -553,6 +632,27 @@ public final class TransportBuffer implements AutoCloseable {
             this.currentWritten = 0;
         }
 
+        public Writer fork(int offset) {
+            if (offset < 0 || offset > this.totalWritten) {
+                throw new IndexOutOfBoundsException("Invalid offset: " + offset);
+            }
+            final int length = this.totalWritten - offset;
+            if (length == 0) {
+                return null;
+            }
+            final Writer fork = TransportBuffer.this.writer();
+            if (fork == null) {
+                throw new BufferOverflowException();
+            }
+            try {
+                fork.write(reader(), offset, length);
+                return fork;
+            } catch (Exception e) {
+                fork.release();
+                throw e;
+            }
+        }
+
         /**
          * Mostly for debugging
          */
@@ -570,6 +670,12 @@ public final class TransportBuffer implements AutoCloseable {
         void position(int position);
 
         int limit();
+
+        /**
+         * To discard remaining bytes. Usually used when we have multiple requests written in a block.
+         * Once set you cannot revert it. Use it wisely.
+         */
+        int limit(int position);
 
         int remaining();
 
@@ -657,6 +763,7 @@ public final class TransportBuffer implements AutoCloseable {
         /**
          * Checks if the next characters match the expected string bytes, ignoring the ASCII case
          * expectes bytes must be in lower case
+         *
          * @param expected the expected string bytes
          */
         boolean matchesAsciiIgnoreCase(byte[] expected);
@@ -797,6 +904,11 @@ public final class TransportBuffer implements AutoCloseable {
          */
         protected int position;
 
+        /**
+         * Logical limit within the request.
+         */
+        protected int limit = -1;
+
         private ReaderImpl(Block head) {
             this.head = head;
             this.current = this.head;
@@ -814,17 +926,29 @@ public final class TransportBuffer implements AutoCloseable {
 
         @Override
         public int limit() {
-            return this.head.writer.totalWritten;
+            return this.limit != -1 ? this.limit : this.head.writer.totalWritten;
+        }
+
+        @Override
+        public int limit(int position) {
+            if (position > this.head.writer.totalWritten) {
+                return this.head.writer.totalWritten;
+            }
+            this.limit = position;
+            if (this.limit > -1 && this.limit < this.position) {
+                position(position);
+            }
+            return this.limit;
         }
 
         @Override
         public int remaining() {
-            return this.head.writer.totalWritten - this.position;
+            return limit() - this.position;
         }
 
         @Override
         public boolean hasRemaining() {
-            return this.position < this.head.writer.totalWritten;
+            return this.position < limit();
         }
 
         protected int written(Block block) {

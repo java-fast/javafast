@@ -16,6 +16,8 @@ public interface ProtocolHandler {
 
     boolean payloadComplete();
 
+    int requestLength();
+
     void reset();
 
 }

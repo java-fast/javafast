@@ -4,8 +4,11 @@ import java.io.IOException;
 import java.nio.BufferOverflowException;
 import java.nio.channels.SelectionKey;
 import java.nio.channels.SocketChannel;
+import java.util.logging.Logger;
 
 final class SocketConnection {
+
+    private static final Logger log = Logger.getLogger(SocketConnection.class.getName());
 
     private static final int MAX_READS_PER_TURN = 16;
     private static final int MAX_READ_BYTES_PER_TURN = 64 * 1024;
@@ -25,6 +28,16 @@ final class SocketConnection {
 
     ResponseBuffer.ResponseSlot response; // current response
 
+    SocketConnection writableNext;
+    boolean writableQueued;
+
+    /**
+     * Instrumentation for benchmarking
+     */
+    private long multiRequestReads;
+    private long discardedBytes;
+
+
     SocketConnection(SelectionKey key, SocketChannel channel, ProtocolHandler protocolHandler, long now) {
         this.key = key;
         this.channel = channel;
@@ -32,6 +45,7 @@ final class SocketConnection {
         this.lastReadNanos = now;
     }
 
+    private int pendingBytes;
     boolean read(TransportBuffer buffer, long now) throws IOException {
         if (this.writer == null) {
             this.writer = buffer.writer();
@@ -44,7 +58,9 @@ final class SocketConnection {
         while (reads < MAX_READS_PER_TURN && bytes < MAX_READ_BYTES_PER_TURN) {
             final int written;
             try {
-                written = this.writer.read(this.channel);
+                written = this.pendingBytes > 0
+                    ? this.pendingBytes
+                    : this.writer.read(this.channel);
             } catch (BufferOverflowException e) {
                 discard();
                 throw ConnectionClosedException.get(e);
@@ -65,8 +81,21 @@ final class SocketConnection {
             // Then, discard the other requests' bytes and publish the first one
             // Because a TransportBuffer.Block must always have a single HTTP request!
             this.protocolHandler.onBytes(this.writer.reader(), written);
+            final int requestLength = this.protocolHandler.requestLength();
             if (this.protocolHandler.payloadComplete()) {
-                return publish();
+                TransportBuffer.Writer fork = null;
+                this.pendingBytes = this.writer.totalWritten() - requestLength;
+                if (this.pendingBytes > 0) {
+                    this.multiRequestReads++;
+                    this.discardedBytes += this.pendingBytes;
+                    log.info(String.format("Discarded %d bytes from multi-request read: %d", this.discardedBytes, this.multiRequestReads));
+                    fork = this.writer.fork(requestLength);
+                }
+                if (publish()) {
+                    this.writer = fork;
+                    return true;
+                }
+                return false; // publish failed
             }
         }
 
@@ -77,6 +106,8 @@ final class SocketConnection {
         final TransportBuffer.Reader reader = this.writer.reader();
         final long sequence = this.responseBuffer.offer(reader);
         if (sequence != -1) {
+            final int limit = reader.position();
+            reader.limit(limit); // limit the reader to discard multiple requests written if any
             reader.reset();
             this.publishedSequence = sequence;
             this.published = this.writer;

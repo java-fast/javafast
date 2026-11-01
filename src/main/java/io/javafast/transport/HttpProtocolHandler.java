@@ -63,6 +63,7 @@ public final class HttpProtocolHandler implements ProtocolHandler {
             this.bodyRemaining -= skip;
             if (this.bodyRemaining == 0) {
                 this.state = State.COMPLETE;
+                this.requestLength = reader.position(); // might be more bytes!
             }
         }
     }
@@ -85,6 +86,7 @@ public final class HttpProtocolHandler implements ProtocolHandler {
                 reader.skip(2);
                 if (!this.contentLengthFound || this.contentLength == 0) {
                     this.state = State.COMPLETE;
+                    this.requestLength = reader.position(); // might be more bytes!
                     return;
                 }
                 this.bodyRemaining = this.contentLength;
@@ -150,6 +152,11 @@ public final class HttpProtocolHandler implements ProtocolHandler {
     @Override
     public boolean payloadComplete() {
         return this.state == State.COMPLETE;
+    }
+
+    @Override
+    public int requestLength() {
+        return this.requestLength;
     }
 
     @Override

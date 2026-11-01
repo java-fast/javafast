@@ -100,7 +100,6 @@ final class RequestContext implements Context {
         this.responseContentLength = -1;
         this.responseHeaders.clear();
 
-        this.reader.reset();
         this.decoder.parse(this.reader);
     }
 
@@ -597,6 +596,7 @@ final class RequestContext implements Context {
         }
         this.writingResponse = true;
         this.reader.reset();
+        this.reader.limit(-1); // remove limit
         this.responseBodyOutputStream.reset(this.writer);
         // write status line
         this.writer.writeBytes(HTTP_1_1_);
