@@ -1,7 +1,10 @@
 package io.javafast.internal;
 
 import java.util.Arrays;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.Objects;
+import java.util.function.Function;
 
 public final class StringMap {
 
@@ -51,6 +54,16 @@ public final class StringMap {
         return findKey(key) >= 0;
     }
 
+    public String computeIfAbsent(String key, Function<String, String> mappingFunction) {
+        final int index = findKey(key);
+        if (index >= 0) {
+            return this.entries[index + 1];
+        }
+        final String value = mappingFunction.apply(key);
+        put(key, value);
+        return value;
+    }
+
     public String keyAt(int index) {
         checkIndex(index);
         return this.entries[index << 1];
@@ -63,6 +76,15 @@ public final class StringMap {
 
     public void clear() {
         this.size = 0;
+    }
+
+    public Map<String, String> toMap() {
+        final Map<String, String> map = new HashMap<>(this.size);
+        for (int i = 0; i < this.size; i++) {
+            final int offset = i << 1;
+            map.put(this.entries[offset], this.entries[offset + 1]);
+        }
+        return map;
     }
 
     private int findKey(String key) {

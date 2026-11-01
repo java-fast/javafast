@@ -1,5 +1,6 @@
 package io.javafast.transport;
 
+import io.javafast.http.Header;
 import io.javafast.http.HttpMethod;
 import io.javafast.http.HttpRequestException;
 import io.javafast.internal.ByteString;
@@ -20,7 +21,7 @@ import java.nio.charset.StandardCharsets;
  */
 public class HttpRequestDecoder {
 
-    private static final int MAX_HEADER_COUNT = Integer.getInteger("javafast.max.header.count", 64);
+    private static final int MAX_HEADER_COUNT = Integer.getInteger("javafast.max.header.count", 48); // 16 reserved, 32 custom
 
     private static final boolean LITTLE_ENDIAN = ByteOrder.nativeOrder() == ByteOrder.LITTLE_ENDIAN;
 
@@ -41,13 +42,16 @@ public class HttpRequestDecoder {
     private static final byte HTAB = '\t';
     private static final byte COLON = ':';
 
-    // TODO move into Headers?
-    private static final byte[] HOST = new byte[] {'h', 'o', 's', 't', ':'};
-    private static final byte[] CONTENT_LENGTH = new byte[] {'c', 'o', 'n', 't', 'e', 'n', 't', '-', 'l', 'e', 'n', 'g', 't', 'h', ':'};
-    private static final byte[] TRANSFER_ENCODING = new byte[] {'t', 'r', 'a', 'n', 's', 'f', 'e', 'r', '-', 'e', 'n', 'c', 'o', 'd', 'i', 'n', 'g', ':'};
+    private static final byte[] HTTP_VERSION = new byte[]{'H', 'T', 'T', 'P', '/', '1', '.', '1'};
+    private static final byte[] TRANSFER_CODE_CHUNKED = new byte[]{'c', 'h', 'u', 'n', 'k', 'e', 'd'};
 
-    private static final byte[] HTTP_VERSION = new byte[] {'H', 'T', 'T', 'P', '/', '1', '.', '1'};
-    private static final byte[] TRANSFER_CODE_CHUNKED = new byte[] {'c', 'h', 'u', 'n', 'k', 'e', 'd'};
+    /**
+     * Known headers
+     */
+    private static final byte[] HOST = new byte[]{'h', 'o', 's', 't', ':'};
+    private static final byte[] CONTENT_LENGTH = new byte[]{'c', 'o', 'n', 't', 'e', 'n', 't', '-', 'l', 'e', 'n', 'g', 't', 'h', ':'};
+    private static final byte[] TRANSFER_ENCODING = new byte[]{'t', 'r', 'a', 'n', 's', 'f', 'e', 'r', '-', 'e', 'n', 'c', 'o', 'd', 'i', 'n', 'g', ':'};
+    private static final byte[] CONNECTION = new byte[]{'c', 'o', 'n', 'n', 'e', 'c', 't', 'i', 'o', 'n', ':'};
 
     private static long hasSpace(long word) {
         final long x = word ^ 0x2020202020202020L;
@@ -148,8 +152,6 @@ public class HttpRequestDecoder {
 
     private TransportBuffer.Reader reader;
 
-    // TODO keep known Headers in another array with Enum/Object keys?
-
     private final int[] headers = new int[MAX_HEADER_COUNT * 4]; // [ NAME_START, NAME_LENGTH, VALUE_START, VALUE_LENGTH, ... ]
 
     private int methodStart;
@@ -158,19 +160,19 @@ public class HttpRequestDecoder {
 
     private int targetStart;
     private int targetLength;
+    private final ByteString target = new ByteString(32);
 
     private int headersStart;
     private int headersLength;
     private int headersCount;
 
-    private int bodyStart;
-    private int bodyLength;
-
+    private final ByteString host = new ByteString(32);
     private int contentLength; // due to MAX_REQUEST_SIZE check int is enough
     private boolean chunked;
+    private boolean keepAlive;
 
-    private final ByteString target = new ByteString(32);
-    private final ByteString host = new ByteString(32);
+    private int bodyStart;
+    private int bodyLength;
 
     public void parse(TransportBuffer.Reader reader) {
         this.reader = reader;
@@ -180,15 +182,16 @@ public class HttpRequestDecoder {
         this.method = null;
         this.targetStart = -1;
         this.targetLength = 0;
+        this.target.clear();
         this.headersStart = -1;
         this.headersLength = 0;
         this.headersCount = 0;
+        this.host.clear();
+        this.contentLength = -1;
+        this.chunked = false;
+        this.keepAlive = true;
         this.bodyStart = -1;
         this.bodyLength = 0;
-        this.contentLength = 0;
-        this.chunked = false;
-        this.target.clear();
-        this.host.clear();
 
         if (!reader.hasRemaining()) {
             return;
@@ -253,11 +256,15 @@ public class HttpRequestDecoder {
                 parseContentLength();
             } else if (this.reader.matchesAsciiIgnoreCase(TRANSFER_ENCODING)) {
                 parseTransferEncoding();
+            } else if (this.reader.matchesAsciiIgnoreCase(CONNECTION)) {
+                parseConnection();
             } else { // Unknown/vendor headers
                 parseHeader();
             }
         }
     }
+
+
 
     private void parseHostHeader() {
         if (this.host.length() > 0) { // multiple Host headers are not allowed
@@ -265,8 +272,8 @@ public class HttpRequestDecoder {
         }
         final int nameStart = this.reader.position();
         final int nameLength = HOST.length - 1;
-        final int valueStart = nameStart + HOST.length;
-        this.reader.skip(HOST.length);
+        final int valueStart = nameStart + nameLength + 1;
+        this.reader.skip(nameLength + 1);
         final int valueLength = this.reader.indexOf(CR, LF);
         if (valueLength < 0) {
             throw HttpRequestException.MALFORMED; // no CRLF
@@ -277,14 +284,17 @@ public class HttpRequestDecoder {
             throw HttpRequestException.MALFORMED;
         }
         this.reader.skip(valueLength + 2); // + CRLF
-        addHeader(this.headersCount++ << 2, nameStart, nameLength, valueStart, valueLength);
+        addHeader(this.headersCount << 2, nameStart, nameLength, valueStart, valueLength);
     }
 
     private void parseContentLength() {
+        if (this.chunked) {
+            throw HttpRequestException.MALFORMED; // chunked already set
+        }
         final int nameStart = this.reader.position();
         final int nameLength = CONTENT_LENGTH.length - 1;
-        final int valueStart = nameStart + CONTENT_LENGTH.length;
-        this.reader.skip(CONTENT_LENGTH.length);
+        final int valueStart = nameStart + nameLength + 1;
+        this.reader.skip(nameLength + 1);
         final int valueLength = this.reader.indexOf(CR, LF);
 
         int digits = 0;
@@ -301,14 +311,17 @@ public class HttpRequestDecoder {
         }
         this.contentLength = value;
         this.reader.skip(2); // + CRLF
-        addHeader(this.headersCount++ << 2, nameStart, nameLength, valueStart, valueLength);
+        addHeader(this.headersCount << 2, nameStart, nameLength, valueStart, valueLength);
     }
 
     private void parseTransferEncoding() {
+        if (this.contentLength > -1) {
+            throw HttpRequestException.MALFORMED; // content length already set
+        }
         final int nameStart = this.reader.position();
         final int nameLength = TRANSFER_ENCODING.length - 1;
-        final int valueStart = nameStart + TRANSFER_ENCODING.length;
-        this.reader.skip(TRANSFER_ENCODING.length);
+        final int valueStart = nameStart + nameLength + 1;
+        this.reader.skip(nameLength + 1);
         final int valueLength = this.reader.indexOf(CR, LF);
         if (valueLength < TRANSFER_CODE_CHUNKED.length) {
             throw HttpRequestException.MALFORMED;
@@ -322,7 +335,28 @@ public class HttpRequestDecoder {
         }
         this.chunked = true;
         this.reader.skip(TRANSFER_CODE_CHUNKED.length + rewind + 2); // must skip amount
-        addHeader(this.headersCount++ << 2, nameStart, nameLength, valueStart, valueLength);
+        addHeader(this.headersCount << 2, nameStart, nameLength, valueStart, valueLength);
+    }
+
+    private void parseConnection() {
+        final int nameStart = this.reader.position();
+        final int nameLength = CONNECTION.length - 1;
+        final int valueStart = nameStart + nameLength + 1;
+        this.reader.skip(nameLength + 1);
+        final int valueLength = this.reader.indexOf(CR, LF);
+        if (valueLength < 0) {
+            throw HttpRequestException.MALFORMED; // no CRLF
+        }
+
+        // TODO parse connection
+        // Possible values:
+        // Connection: keep-alive
+        // Connection: close
+        // Connection: upgrade
+        // Connection: keep-alive, upgrade
+
+        this.reader.skip(valueLength + 2); // + CRLF
+        addHeader(this.headersCount << 2, nameStart, nameLength, valueStart, valueLength);
     }
 
     private void parseHeader() {
@@ -362,7 +396,7 @@ public class HttpRequestDecoder {
             throw HttpRequestException.MALFORMED;
         }
         this.reader.skip(valueLength + 2); // + CRLF
-        addHeader(this.headersCount++ << 2, nameStart, nameLength, valueStart, valueLength);
+        addHeader(this.headersCount << 2, nameStart, nameLength, valueStart, valueLength);
     }
 
     private boolean scalarHeaderNameCheck(int length) {
@@ -388,6 +422,7 @@ public class HttpRequestDecoder {
         this.headers[offset + 1] = nameLength;
         this.headers[offset + 2] = valueStart;
         this.headers[offset + 3] = valueLength;
+        this.headersCount++;
     }
 
     private void parseBody() {
@@ -428,7 +463,13 @@ public class HttpRequestDecoder {
 
     public boolean matchHeaderName(int index, String name) {
         final int offset = index << 2;
-        return this.reader.matchesAsciiIgnoreCase(name, this.headers[offset], this.headers[offset + 1]);
+        final int length = this.headers[offset + 1];
+        if (name.length() != length) {
+            return false;
+        }
+        final int position = this.headers[offset];
+        this.reader.position(position);
+        return this.reader.matchesAsciiIgnoreCase(name);
     }
 
     public String getHeaderName(int index) {
@@ -439,6 +480,19 @@ public class HttpRequestDecoder {
     public String getHeader(int index) {
         final int offset = index << 2;
         return this.reader.getString(this.headers[offset + 2], this.headers[offset + 3], StandardCharsets.US_ASCII, true);
+    }
+
+    public String getHeader(String name) {
+        if (this.headersCount == 0) return null;
+        if (Header.HOST.equalsIgnoreCase(name)) {
+            return this.host.toString();
+        }
+        for (int i = 0; i < this.headersCount; i++) { // lookup custom headers
+            if (matchHeaderName(i, name)) {
+                return getHeader(i);
+            }
+        }
+        return null;
     }
 
     public int getContentLength() {

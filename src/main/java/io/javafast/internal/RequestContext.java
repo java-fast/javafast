@@ -46,7 +46,7 @@ final class RequestContext implements Context {
     private String path;
     private String queryString;
     private PathParams pathParamMap;
-    private Map<String, String> requestHeaders;
+    private final StringMap requestHeaders = new StringMap(8);
 
     private int statusCode = HttpStatus.OK.code();
     private final StringMap responseHeaders = new StringMap(8);
@@ -65,36 +65,19 @@ final class RequestContext implements Context {
         }
     }
 
-    private String lookupHeader(String header) {
-        final int count = this.decoder.getHeadersCount();
-        if (count == 0) return null;
-        for (int i = 0; i < count; i++) {
-            if (this.decoder.matchHeaderName(i, header)) {
-                if (this.requestHeaders == null) {
-                    this.requestHeaders = new HashMap<>();
-                }
-                final String value = this.decoder.getHeader(i);
-                this.requestHeaders.put(header, value);
-                return value;
-            }
-        }
-        return null;
-    }
-
     private Map<String, String> getHeaders() {
         final int count = this.decoder.getHeadersCount();
         if (count == 0) return Collections.emptyMap();
-        ensureRequestReadable();
-        if (this.requestHeaders == null) {
-            this.requestHeaders = new HashMap<>();
+        if (count == this.requestHeaders.size()) {
+            return this.requestHeaders.toMap();
         }
-        this.requestHeaders.clear();
+        ensureRequestReadable();
         for (int i = 0; i < count; i++) {
             final String name = this.decoder.getHeaderName(i);
-            final String value = this.decoder.getHeader(i);
-            this.requestHeaders.put(name, value);
+            final int j = i;
+            this.requestHeaders.computeIfAbsent(name, _ -> this.decoder.getHeader(j));
         }
-        return this.requestHeaders;
+        return this.requestHeaders.toMap();
     }
 
     void reset(TransportBuffer.Writer writer, AppData appData, String contextPath) {
@@ -110,7 +93,7 @@ final class RequestContext implements Context {
         this.path = null;
         this.queryString = null;
         this.pathParamMap = null;
-        this.requestHeaders = null;
+        this.requestHeaders.clear();
         this.responseBody = null;
         this.responseBodyBytes = null;
         this.responseBodyInputStream = null;
@@ -378,11 +361,8 @@ final class RequestContext implements Context {
 
     @Override
     public String header(String name) {
-        if (this.requestHeaders != null && this.requestHeaders.containsKey(name)) {
-            return this.requestHeaders.get(name);
-        }
         ensureRequestReadable();
-        return lookupHeader(name);
+        return this.requestHeaders.computeIfAbsent(name, this.decoder::getHeader);
     }
 
     @Override
@@ -511,6 +491,7 @@ final class RequestContext implements Context {
     public Context header(String name, String value) {
         Objects.requireNonNull(name, "name");
         Objects.requireNonNull(value, "value");
+        // TODO check is tChar?
         if (name.indexOf('\r') >= 0 || name.indexOf('\n') >= 0 || value.indexOf('\r') >= 0 || value.indexOf('\n') >= 0) {
             throw new IllegalArgumentException("Invalid HTTP header");
         }

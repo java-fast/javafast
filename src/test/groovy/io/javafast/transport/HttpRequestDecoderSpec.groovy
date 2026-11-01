@@ -1,5 +1,6 @@
 package io.javafast.transport
 
+import io.javafast.http.Header
 import io.javafast.http.HttpMethod
 import io.javafast.http.HttpRequestException
 import io.javafast.test.TestUtils
@@ -32,9 +33,9 @@ class HttpRequestDecoderSpec extends Specification implements TestUtils {
         decoder.getHeaderName(0) == 'Host'
         decoder.getHeaderName(1) == 'Content-length'
         decoder.getHeaderName(2) == 'X-test'
-        decoder.getHeader(0) == 'localhost'
-        decoder.getHeader(1) == '0'
-        decoder.getHeader(2) == 'abc'
+        decoder.getHeader(Header.HOST) == 'localhost'
+        decoder.getHeader(Header.CONTENT_LENGTH) == '0'
+        decoder.getHeader('X-test') == 'abc'
         decoder.getBodyAsString() == ''
 
         cleanup:
@@ -190,9 +191,9 @@ class HttpRequestDecoderSpec extends Specification implements TestUtils {
         decoder.getHeaderName(0) == 'Host'
         decoder.getHeaderName(1) == 'Content-Length'
         decoder.getHeaderName(2) == 'X-Test'
-        decoder.getHeader(0) == 'example.com'
-        decoder.getHeader(1) == '0'
-        decoder.getHeader(2) == 'abc efg'
+        decoder.getHeader(Header.HOST) == 'example.com'
+        decoder.getHeader(Header.CONTENT_LENGTH) == '0'
+        decoder.getHeader('X-Test') == 'abc efg'
         decoder.getBodyAsString() == ''
 
         cleanup:
