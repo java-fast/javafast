@@ -25,6 +25,9 @@ final class SocketConnection {
 
     ResponseBuffer.ResponseSlot response; // current response
 
+    SocketConnection readPendingNext;
+    boolean readPendingQueued;
+
     SocketConnection writableNext;
     boolean writableQueued;
 
@@ -140,4 +143,13 @@ final class SocketConnection {
         }
         discard();
     }
+
+    int pendingBytes() {
+        return this.pendingBytes;
+    }
+
+    boolean isClosed() {
+        return this.closed;
+    }
+
 }

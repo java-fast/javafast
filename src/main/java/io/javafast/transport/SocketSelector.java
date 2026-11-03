@@ -5,10 +5,7 @@ import java.nio.channels.SelectableChannel;
 import java.nio.channels.SelectionKey;
 import java.nio.channels.Selector;
 import java.nio.channels.SocketChannel;
-import java.util.HashMap;
-import java.util.Iterator;
-import java.util.Map;
-import java.util.Queue;
+import java.util.*;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.logging.Level;
@@ -26,6 +23,8 @@ final class SocketSelector implements Runnable {
     private static final long READ_TIMEOUT_NANOS = Long.getLong("javafast.read.timeout.nanos", 30_000_000_000L); // default 30 seconds
     private static final long TIMEOUT_SCAN_INTERVAL_NANOS = 1_000_000_000L; // min socket read timeout is 1 second
     private static final int MAX_REQUESTS_PER_TURN = 16;
+    private static final int MAX_RESPONSES_PER_TURN = 16;
+    private static final int MAX_PENDING_READS_PER_TURN = 16;
 
     private volatile boolean running = true;
 
@@ -84,10 +83,11 @@ final class SocketSelector implements Runnable {
             long nextTimeoutScan = System.nanoTime() + TIMEOUT_SCAN_INTERVAL_NANOS;
             long nextReport = System.nanoTime() + 1_000_000_000L;
             while (this.running && !Thread.currentThread().isInterrupted()) {
-                final long loopStart = System.nanoTime();
+                long now = System.nanoTime();
 
                 registerPendingConnections();
-                long now = System.nanoTime();
+                processPendingReads(now);
+
                 final long timeout = computeSelectTimeout(now, nextTimeoutScan);
                 final int ready;
 
@@ -115,9 +115,9 @@ final class SocketSelector implements Runnable {
                 }
 
                 this.loopCount++;
-                this.loopNanos += System.nanoTime() - loopStart;
+                this.loopNanos += System.nanoTime() - now;
                 if (now - nextReport >= 0) {
-//                    reportStats();
+                    reportStats();
                     resetStats();
                     nextReport = now + 1_000_000_000L;
                 }
@@ -245,6 +245,19 @@ final class SocketSelector implements Runnable {
         }
     }
 
+    private void processPendingReads(long now) {
+        for (int i = 0; i < MAX_PENDING_READS_PER_TURN; i++) {
+            final SocketConnection conn = pollReadPending();
+            if (conn == null) {
+                return;
+            }
+            if (conn.isClosed()) {
+                continue;
+            }
+            processRead(conn, now);
+        }
+    }
+
     private void processWritableSockets() {
         SocketConnection conn;
         while ((conn = pollWritable()) != null) {
@@ -305,13 +318,17 @@ final class SocketSelector implements Runnable {
                 dispatch(conn);
                 requests++;
             }
+            if (conn.pendingBytes() > 0) { // still have written bytes
+                enqueueReadPending(conn); // enqueue for next selector loop
+            }
         } catch (IOException _) {
             closeAndRemove(conn);
         }
     }
 
     private void processWrite(SocketConnection conn, long now) {
-        while (true) {
+        int responses = 0;
+        while (responses < MAX_RESPONSES_PER_TURN) {
             if (conn.response == null) {
                 conn.response = conn.responseBuffer.take();
                 if (conn.response == null) { // no response ready
@@ -327,6 +344,7 @@ final class SocketSelector implements Runnable {
                     reader.close(); // release blocks
                     conn.response = null;
                     conn.responseBuffer.update(sequence, ResponseBuffer.SlotState.FREE);
+                    responses++;
                     this.completedRequests++;
                 }
             } catch (IOException _) {
@@ -423,6 +441,37 @@ final class SocketSelector implements Runnable {
         }
     }
 
+    private SocketConnection readPendingHead;
+    private SocketConnection readPendingTail;
+
+    private void enqueueReadPending(SocketConnection conn) {
+        if (conn.readPendingQueued) {
+            return;
+        }
+        conn.readPendingQueued = true;
+        conn.readPendingNext = null;
+        if (this.readPendingTail == null) {
+            this.readPendingHead = conn;
+        } else {
+            this.readPendingTail.readPendingNext = conn;
+        }
+        this.readPendingTail = conn;
+    }
+
+    private SocketConnection pollReadPending() {
+        final SocketConnection conn = this.readPendingHead;
+        if (conn == null) {
+            return null;
+        }
+        this.readPendingHead = conn.readPendingNext;
+        if (this.readPendingHead == null) {
+            this.readPendingTail = null;
+        }
+        conn.readPendingNext = null;
+        conn.readPendingQueued = false;
+        return conn;
+    }
+
     private SocketConnection writableHead;
     private SocketConnection writableTail;
 
@@ -430,16 +479,13 @@ final class SocketSelector implements Runnable {
         if (conn.writableQueued) {
             return false;
         }
-
         conn.writableQueued = true;
         conn.writableNext = null;
-
         if (this.writableTail == null) {
             this.writableHead = conn;
         } else {
             this.writableTail.writableNext = conn;
         }
-
         this.writableTail = conn;
         return true;
     }
@@ -449,12 +495,10 @@ final class SocketSelector implements Runnable {
         if (conn == null) {
             return null;
         }
-
         this.writableHead = conn.writableNext;
         if (this.writableHead == null) {
             this.writableTail = null;
         }
-
         conn.writableNext = null;
         conn.writableQueued = false;
         return conn;
