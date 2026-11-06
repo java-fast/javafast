@@ -518,32 +518,26 @@ public final class TransportBuffer implements AutoCloseable {
                 return;
             }
 
+            // locate the source block without changing the Reader cursor
             Block sourceBlock = reader.head;
             int sourceOffset = offset;
-
-            // Locate the source block without changing the Reader cursor.
             while (sourceBlock != null) {
                 final int written = reader.written(sourceBlock);
                 if (sourceOffset < written) {
                     break;
                 }
-
                 sourceOffset -= written;
                 sourceBlock = sourceBlock.next();
             }
 
             ensureHead();
-
             int remaining = length;
-
             while (remaining > 0) {
                 if (sourceBlock == null) {
                     throw new IllegalStateException("Source buffer chain ended unexpectedly");
                 }
 
-                final int sourceAvailable =
-                    reader.written(sourceBlock) - sourceOffset;
-
+                final int sourceAvailable = reader.written(sourceBlock) - sourceOffset;
                 if (sourceAvailable == 0) {
                     sourceBlock = sourceBlock.next();
                     sourceOffset = 0;
@@ -551,23 +545,8 @@ public final class TransportBuffer implements AutoCloseable {
                 }
 
                 ensureWritableBlock();
-
-                final int count = Math.min(
-                    remaining,
-                    Math.min(
-                        sourceAvailable,
-                        payloadSize - this.currentWritten
-                    )
-                );
-
-                MemorySegment.copy(
-                    sourceBlock.payload,
-                    sourceOffset,
-                    this.current.payload,
-                    this.currentWritten,
-                    count
-                );
-
+                final int count = Math.min(remaining, Math.min(sourceAvailable, payloadSize - this.currentWritten));
+                MemorySegment.copy(sourceBlock.payload, sourceOffset, this.current.payload, this.currentWritten, count);
                 sourceOffset += count;
                 this.currentWritten += count;
                 this.totalWritten += count;
