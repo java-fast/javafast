@@ -1,12 +1,15 @@
 package io.javafast.transport;
 
 import java.io.IOException;
-import java.nio.channels.SelectableChannel;
 import java.nio.channels.SelectionKey;
 import java.nio.channels.Selector;
 import java.nio.channels.SocketChannel;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Iterator;
+import java.util.List;
+import java.util.Queue;
 import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.logging.Level;
 import java.util.logging.Logger;
@@ -18,13 +21,17 @@ import java.util.logging.Logger;
  */
 final class SocketSelector implements Runnable {
 
+    private static final boolean instrumentation = Boolean.getBoolean("javafast.instrumentation");
     private static final Logger log = Logger.getLogger(SocketSelector.class.getName());
 
-    private static final long READ_TIMEOUT_NANOS = Long.getLong("javafast.read.timeout.nanos", 30_000_000_000L); // default 30 seconds
+    static final long READ_IDLE_TIMEOUT_NANOS = Long.getLong("javafast.read.timeout.nanos", TimeUnit.SECONDS.toNanos(10)); // default 10 seconds
+
     private static final long TIMEOUT_SCAN_INTERVAL_NANOS = 1_000_000_000L; // min socket read timeout is 1 second
     private static final int MAX_REQUESTS_PER_TURN = 16;
     private static final int MAX_RESPONSES_PER_TURN = 16;
     private static final int MAX_PENDING_READS_PER_TURN = 16;
+    private static final int TIMEOUT_WHEEL_SIZE = 64;
+    private static final long TIMEOUT_TICK_NANOS = TimeUnit.SECONDS.toNanos(1);
 
     private volatile boolean running = true;
 
@@ -33,7 +40,8 @@ final class SocketSelector implements Runnable {
     private final ProtocolHandler protocolHandler;
     private final RequestDispatcher requestDispatcher;
 
-    private final Map<SelectableChannel, SocketConnection> connections = new HashMap<>();
+    private final ReadTimeoutWheel readTimeoutWheel = new ReadTimeoutWheel(TIMEOUT_WHEEL_SIZE, TIMEOUT_TICK_NANOS, System.nanoTime());
+    private final List<SocketConnection> connections = new ArrayList<>();
     private final Queue<SocketChannel> registrations = new ConcurrentLinkedQueue<>();
     private final Queue<SocketConnection> errors = new ConcurrentLinkedQueue<>();
 
@@ -55,8 +63,7 @@ final class SocketSelector implements Runnable {
             closeQuietly(socket);
             return;
         }
-        // TODO unnecessary wakeup under high connection rates?
-        this.registrationWakeups.incrementAndGet();
+        this.registrationWakeupCalls.incrementAndGet();
         this.selector.wakeup();
     }
 
@@ -73,18 +80,29 @@ final class SocketSelector implements Runnable {
     private long selectedKeysCount;
     private long processedKeysCount;
     private long validKeysCount;
+    private long readCalls;
+    private long readNanos;
+    private long readRequests;
+    private long readBytes;
+    private long dispatchCalls;
+    private long dispatchNanos;
+    private long writeCalls;
+    private long writeNanos;
+    private long writeBytes;
     private long completedRequests;
-    private final AtomicLong registrationWakeups = new AtomicLong();
-    private final AtomicLong responseWakeups = new AtomicLong();
+    private final AtomicLong registrationWakeupCalls = new AtomicLong();
+    private final AtomicLong responseWakeupCalls = new AtomicLong();
 
     @Override
     public void run() {
         try {
-            long nextTimeoutScan = System.nanoTime() + TIMEOUT_SCAN_INTERVAL_NANOS;
-            long nextReport = System.nanoTime() + 1_000_000_000L;
+            long now = System.nanoTime();
+            long nextTimeoutScan = now + TIMEOUT_SCAN_INTERVAL_NANOS;
+            long lastReportNanos = now;
+            long nextReport = now + 1_000_000_000L;
             while (this.running && !Thread.currentThread().isInterrupted()) {
-                long now = System.nanoTime();
-
+                final long loopStart = System.nanoTime();
+                now = loopStart;
                 registerPendingConnections();
                 processPendingReads(now);
 
@@ -115,11 +133,15 @@ final class SocketSelector implements Runnable {
                 }
 
                 this.loopCount++;
-                this.loopNanos += System.nanoTime() - now;
-                if (now - nextReport >= 0) {
-                    reportStats();
+                this.loopNanos += System.nanoTime() - loopStart;
+                now = System.nanoTime();
+                if (instrumentation && now - nextReport >= 0) {
+                    final long elapsed = now - lastReportNanos;
+                    reportStats(elapsed);
+                    reportReadWriteStats(elapsed);
                     resetStats();
-                    nextReport = now + 1_000_000_000L;
+                    lastReportNanos = System.nanoTime();
+                    nextReport = lastReportNanos + 1_000_000_000L;
                 }
             }
         } catch (Exception e) {
@@ -141,16 +163,70 @@ final class SocketSelector implements Runnable {
         this.selectedKeysNanos = 0;
         this.completedRequests = 0;
         this.validKeysCount = 0;
+        this.readCalls = 0;
+        this.readNanos = 0;
+        this.readRequests = 0;
+        this.readBytes = 0;
+        this.dispatchCalls = 0;
+        this.dispatchNanos = 0;
+        this.writeCalls = 0;
+        this.writeNanos = 0;
+        this.writeBytes = 0;
 
-        this.registrationWakeups.set(0);
-        this.responseWakeups.set(0);
+        this.registrationWakeupCalls.set(0);
+        this.responseWakeupCalls.set(0);
     }
 
-    private void reportStats() {
+    private void reportReadWriteStats(long elapsedNanos) {
+        final double seconds = elapsedNanos / 1_000_000_000.0;
+        if (elapsedNanos <= 0) return;
+
+        System.out.printf("""
+
+        Read:
+          calls:       %,d (%.0f/sec)
+          total time:  %.2f ms
+          avg time:    %.2f ns/call
+          requests:    %,d (%.0f/sec)
+          bytes:       %,d (%.2f MB/sec)
+
+        Dispatch:
+          calls:       %,d
+          total time:  %.2f ms
+          avg time:    %.2f ns/call
+
+        Write:
+          calls:       %,d (%.0f/sec)
+          total time:  %.2f ms
+          avg time:    %.2f ns/call
+          responses:   %,d (%.0f/sec)
+          bytes:       %,d (%.2f MB/sec)
+        """,
+            readCalls, readCalls / seconds,
+            readNanos / 1_000_000.0,
+            readCalls == 0 ? 0 : (double) readNanos / readCalls,
+            readRequests, readRequests / seconds,
+            readBytes, readBytes / seconds / 1_000_000.0,
+
+            dispatchCalls,
+            dispatchNanos / 1_000_000.0,
+            dispatchCalls == 0 ? 0 : (double) dispatchNanos / dispatchCalls,
+
+            writeCalls, writeCalls / seconds,
+            writeNanos / 1_000_000.0,
+            writeCalls == 0 ? 0 : (double) writeNanos / writeCalls,
+            completedRequests, completedRequests / seconds,
+            writeBytes, writeBytes / seconds / 1_000_000.0
+        );
+    }
+
+    private void reportStats(long elapsedNanos) {
+        final double seconds = elapsedNanos / 1_000_000_000.0;
+        if (elapsedNanos <= 0) return;
+
         final long requests = this.completedRequests;
         final long loops = this.loopCount;
-        final long totalWakeups =
-            this.registrationWakeups.get() + this.responseWakeups.get();
+        final long totalWakeups = this.registrationWakeupCalls.get() + this.responseWakeupCalls.get();
 
         final double avgLoopNanos =
             loops == 0 ? 0 : (double) this.loopNanos / loops;
@@ -165,7 +241,7 @@ final class SocketSelector implements Runnable {
             loops == 0 ? 0 : (double) requests / loops;
 
         final double wakeupsPerRequest =
-            requests == 0 ? 0 : (double) this.responseWakeups.get() / requests;
+            requests == 0 ? 0 : (double) this.responseWakeupCalls.get() / requests;
 
         final double avgSelectedKeysPerLoop =
             loops == 0 ? 0 : (double) this.selectedKeysCount / loops;
@@ -189,59 +265,63 @@ final class SocketSelector implements Runnable {
 
         log.info(() -> String.format(
             """
-            SelectorStats:
-              loops/sec:                  %,d
-              avg loop:                   %.1f ns
-              select calls/sec:           %,d
-              avg select:                 %.1f ns
-              selectNow calls/sec:        %,d
-              avg selectNow:              %.1f ns
-              selected keys/sec:          %,d
-              processed keys/sec:         %,d
-              valid keys/sec:             %,d
-              selected keys/loop:         %.3f
-              processed keys/loop:        %.3f
-              valid keys/loop:            %.3f
-              selected processing:        %.2f%%
-              select time:                %.2f%%
-              other  time:                %.2f%%
-              requests/sec:               %,d
-              requests/loop:              %.3f
-              response wakeups/sec:       %,d
-              registration wakeups/sec:   %,d
-              wakeups/request:            %.3f
-              total wakeups/sec:          %,d
-            """,
-            loops,
+                SelectorStats:
+                  loops/sec:                            %.0f
+                  avg loop:                             %.1f ns
+                  select calls/sec:                     %.0f
+                  avg select:                           %.1f ns
+                  selectNow calls/sec:                  %.0f
+                  avg selectNow:                        %.1f ns
+                  selected keys/sec:                    %.0f
+                  processed keys/sec:                   %.0f
+                  valid keys/sec:                       %.0f
+                  selected keys/loop:                   %.3f
+                  processed keys/loop:                  %.3f
+                  valid keys/loop:                      %.3f
+                  selected processing:                  %.2f%%
+                  select time:                          %.2f%%
+                  other  time:                          %.2f%%
+                  (completed) requests/sec:             %.0f
+                  (completed) requests/loop:            %.3f
+                  response wakeups/sec:                 %.0f
+                  registration wakeups/sec:             %.0f
+                  wakeup calls/(completed) request:     %.3f
+                  total wakeup calls/sec:               %.0f
+                """,
+            this.loopCount / seconds,
             avgLoopNanos,
-            this.selectCount,
+            this.selectCount / seconds,
             avgSelectNanos,
-            this.selectNowCount,
+            this.selectNowCount / seconds,
             avgSelectNowNanos,
-            this.selectedKeysCount,
-            this.processedKeysCount,
-            this.validKeysCount,
+            this.selectedKeysCount / seconds,
+            this.processedKeysCount / seconds,
+            this.validKeysCount / seconds,
             avgSelectedKeysPerLoop,
             avgProcessedKeysPerLoop,
             avgValidKeysPerLoop,
             selectedProcessingPercent,
             selectPercent,
             otherProcessingPercent,
-            requests,
+            this.completedRequests / seconds,
             avgRequestsPerLoop,
-            this.responseWakeups.get(),
-            this.registrationWakeups.get(),
+            this.responseWakeupCalls.get() / seconds,
+            this.registrationWakeupCalls.get() / seconds,
             wakeupsPerRequest,
-            totalWakeups
+            totalWakeups / seconds
         ));
     }
 
     private void registerPendingConnections() throws IOException {
         SocketChannel socket;
         while ((socket = this.registrations.poll()) != null) {
-            final SelectionKey key = socket.register(this.selector, SelectionKey.OP_READ);
-            final SocketConnection connection = new SocketConnection(key, socket, this.protocolHandler, System.nanoTime());
-            this.connections.put(socket, connection);
+            final SelectionKey key = socket.register(this.selector, SelectionKey.OP_READ, null);
+            final SocketConnection conn = new SocketConnection(key, socket, this.protocolHandler, this.readTimeoutWheel, System.nanoTime());
+            conn.index = this.connections.size();
+            key.attach(conn);
+            this.connections.add(conn);
+            conn.readDeadlineNanos = conn.lastReadNanos + READ_IDLE_TIMEOUT_NANOS;
+            this.readTimeoutWheel.add(conn);
         }
     }
 
@@ -285,21 +365,19 @@ final class SocketSelector implements Runnable {
                 }
                 this.validKeysCount++;
 
+                conn = (SocketConnection) key.attachment();
+                if (conn == null) {
+                    key.cancel();
+                    continue;
+                }
+
                 if (key.isReadable()) {
-                    if ((conn = this.connections.get(key.channel())) == null) {
-                        key.cancel();
-                        continue;
-                    }
                     processRead(conn, now);
                     if (!key.isValid()) {
                         continue;
                     }
                 }
                 if (key.isWritable()) {
-                    if ((conn = this.connections.get(key.channel())) == null) {
-                        key.cancel();
-                        continue;
-                    }
                     processWrite(conn, now);
                 }
             }
@@ -312,17 +390,30 @@ final class SocketSelector implements Runnable {
         try {
             int requests = 0;
             while (requests < MAX_REQUESTS_PER_TURN) {
-                if (!conn.read(this.transportBuffer, now)) {
+                long start = System.nanoTime();
+                final boolean ready;
+                try {
+                    ready = conn.read(this.transportBuffer, now);
+                } finally {
+                    this.readNanos += System.nanoTime() - start;
+                    this.readCalls++;
+                    this.readBytes += conn.readBytesThisCall;
+                }
+                if (!ready) {
                     break;
                 }
+                this.readRequests++;
+                start = System.nanoTime();
                 dispatch(conn);
+                this.dispatchNanos += System.nanoTime() - start;
+                this.dispatchCalls++;
                 requests++;
             }
             if (conn.pendingBytes() > 0) { // still have written bytes
                 enqueueReadPending(conn); // enqueue for next selector loop
             }
         } catch (IOException _) {
-            closeAndRemove(conn);
+            close(conn);
         }
     }
 
@@ -338,17 +429,24 @@ final class SocketSelector implements Runnable {
             }
             final var reader = conn.response.reader();
             try {
-                conn.write(reader, now);
+                final long start = System.nanoTime();
+                try {
+                    conn.write(reader, now);
+                } finally {
+                    this.writeNanos += System.nanoTime() - start;
+                    this.writeCalls++;
+                    this.writeBytes += conn.writeBytesThisCall;
+                }
                 if (!reader.hasRemaining()) {
                     final long sequence = conn.response.sequence();
                     reader.close(); // release blocks
                     conn.response = null;
                     conn.responseBuffer.update(sequence, ResponseBuffer.SlotState.FREE);
                     responses++;
-                    this.completedRequests++;
+                    this.completedRequests++; // same with writeResponses
                 }
             } catch (IOException _) {
-                closeAndRemove(conn);
+                close(conn);
                 return;
             }
         }
@@ -367,7 +465,7 @@ final class SocketSelector implements Runnable {
         } finally {
             if (conn.responseBuffer.update(sequence, ResponseBuffer.SlotState.READY)) {
                 if (enqueueWritable(conn)) {
-                    this.responseWakeups.incrementAndGet();
+                    this.responseWakeupCalls.incrementAndGet();
                     this.selector.wakeup();
                 }
             }
@@ -375,27 +473,18 @@ final class SocketSelector implements Runnable {
     }
 
     private void checkSocketReadTimeouts(long now) {
-        // TODO convert PriorityQueue/deadline wheel?
-        final var iterator = this.connections.entrySet().iterator();
-        while (iterator.hasNext()) {
-            final var entry = iterator.next();
-            final SocketConnection connection = entry.getValue();
-            final long idle = now - connection.lastReadNanos;
-            if (idle >= READ_TIMEOUT_NANOS) {
-                connection.key.cancel();
-                connection.close();
-                iterator.remove();
-            }
-        }
+        this.readTimeoutWheel.expire(now, conn -> {
+            conn.close();
+            removeConnection(conn);
+        });
     }
 
     private long computeSelectTimeout(long now, long nextTimeoutScan) {
         if (this.connections.isEmpty()) {
-            return READ_TIMEOUT_NANOS / 1_000_000L;
+            return READ_IDLE_TIMEOUT_NANOS / 1_000_000L;
         }
         final long timeoutNanos = Math.max(0L, nextTimeoutScan - now);
-        // round up
-        return (timeoutNanos == 0) ? 0 : ((timeoutNanos + 999_999L) / 1_000_000L);
+        return (timeoutNanos == 0) ? 0 : ((timeoutNanos + 999_999L) / 1_000_000L); // round up
     }
 
     void shutdown() {
@@ -403,14 +492,28 @@ final class SocketSelector implements Runnable {
         this.selector.wakeup();
     }
 
-    private void close(SocketConnection connection) {
-        connection.key.cancel();
-        connection.close();
+    /**
+     * Swap-remove: efficiently removes a connection from the ArrayList with O(1)
+     */
+    private void removeConnection(SocketConnection conn) {
+        final int index = conn.index;
+        if (index < 0) {
+            return;
+        }
+        final int lastIndex = this.connections.size() - 1;
+        if (index != lastIndex) {
+            final SocketConnection last = this.connections.get(lastIndex);
+            this.connections.set(index, last);
+            last.index = index;
+        }
+        this.connections.remove(lastIndex);
+        conn.index = -1;
     }
 
-    private void closeAndRemove(SocketConnection connection) {
-        this.connections.remove(connection.key.channel());
-        close(connection);
+    private void close(SocketConnection connection) {
+        this.readTimeoutWheel.remove(connection);
+        removeConnection(connection);
+        connection.close();
     }
 
     private void closeQuietly(SocketChannel socket) {
@@ -423,12 +526,15 @@ final class SocketSelector implements Runnable {
 
     private void closeResources() {
         // all registered connections are cleared
-        this.connections.values().forEach(this::close);
+        this.connections.forEach(SocketConnection::close);
         this.connections.clear();
         // close accepted sockets that not yet registered with the selector
         SocketChannel socket;
         while ((socket = this.registrations.poll()) != null) {
             closeQuietly(socket);
+        }
+        while (pollReadPending() != null) {
+            // drain read queue
         }
         while (pollWritable() != null) {
             // drain writable queue
@@ -443,6 +549,8 @@ final class SocketSelector implements Runnable {
 
     private SocketConnection readPendingHead;
     private SocketConnection readPendingTail;
+    private SocketConnection writableHead;
+    private SocketConnection writableTail;
 
     private void enqueueReadPending(SocketConnection conn) {
         if (conn.readPendingQueued) {
@@ -471,9 +579,6 @@ final class SocketSelector implements Runnable {
         conn.readPendingQueued = false;
         return conn;
     }
-
-    private SocketConnection writableHead;
-    private SocketConnection writableTail;
 
     private synchronized boolean enqueueWritable(SocketConnection conn) {
         if (conn.writableQueued) {

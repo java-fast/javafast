@@ -1,14 +1,13 @@
 package io.javafast.transport
 
 import io.javafast.test.TestUtils
-import io.javafast.test.TransportUtils
 import spock.lang.Specification
 import spock.lang.Timeout
 
 import java.nio.charset.StandardCharsets
 
-@Timeout(5)
-class SocketConnectionSpec extends Specification implements TestUtils, TransportUtils {
+@Timeout(30)
+class SocketConnectionSpec extends Specification implements TestUtils {
 
     def 'should process two requests sent in a single socket write'() {
         given:
@@ -44,6 +43,21 @@ class SocketConnectionSpec extends Specification implements TestUtils, Transport
         cleanup:
         println(response)
 
+    }
+
+    def 'should close an idle socket after its read timeout'() {
+        setup:
+        create(8001, { -> new JdkHttpTransport(TransportBuffer.create(1024, 1024)) }) { }
+
+        when:
+        int readResult = Integer.MIN_VALUE
+        new Socket('localhost', 8001).withCloseable { socket ->
+            socket.soTimeout = 15_000 // read idle timeout is 10 seconds!
+            readResult = socket.inputStream.read()
+        }
+
+        then:
+        readResult == -1 // should end up here in 10 seconds
     }
 
 }

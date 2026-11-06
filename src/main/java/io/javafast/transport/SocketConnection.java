@@ -5,18 +5,29 @@ import java.nio.BufferOverflowException;
 import java.nio.channels.SelectionKey;
 import java.nio.channels.SocketChannel;
 
+import static io.javafast.transport.SocketSelector.READ_IDLE_TIMEOUT_NANOS;
+
 final class SocketConnection {
 
     private static final int MAX_READS_PER_TURN = 16;
     private static final int MAX_READ_BYTES_PER_TURN = 64 * 1024;
 
+    int index = -1; // to identify SocketConnection for swap-remove in SocketSelector
     private boolean closed;
 
     private final SocketChannel channel;
     private final ProtocolHandler protocolHandler;
+    private final ReadTimeoutWheel readTimeoutWheel;
     final SelectionKey key;
     final ResponseBuffer responseBuffer = ResponseBuffer.create(Integer.getInteger("javafast.socket.response.buffer.size", 16));
+
+    // Timing Wheel
+    SocketConnection timeoutNext;
+    SocketConnection timeoutPrev;
+    int timeoutBucket = -1;
+    long readDeadlineNanos; // next bucket
     long lastReadNanos; // socket read time
+
     long lastWriteNanos; // socket write time
 
     TransportBuffer.Writer writer;
@@ -25,21 +36,28 @@ final class SocketConnection {
 
     ResponseBuffer.ResponseSlot response; // current response
 
+    // read pending queue
     SocketConnection readPendingNext;
     boolean readPendingQueued;
-
+    // writable queue
     SocketConnection writableNext;
     boolean writableQueued;
 
-    SocketConnection(SelectionKey key, SocketChannel channel, ProtocolHandler protocolHandler, long now) {
+    // temporary instrumentation
+    int readBytesThisCall;
+    int writeBytesThisCall;
+
+    SocketConnection(SelectionKey key, SocketChannel channel, ProtocolHandler protocolHandler, ReadTimeoutWheel readTimeoutWheel, long now) {
         this.key = key;
         this.channel = channel;
         this.protocolHandler = protocolHandler;
+        this.readTimeoutWheel = readTimeoutWheel;
         this.lastReadNanos = now;
     }
 
     private int pendingBytes;
     boolean read(TransportBuffer buffer, long now) throws IOException {
+        this.readBytesThisCall = 0;
         if (this.writer == null) {
             this.writer = buffer.writer();
             if (this.writer == null) {
@@ -65,7 +83,11 @@ final class SocketConnection {
                     break;
                 }
                 this.pendingBytes = written;
-                this.lastReadNanos = now;
+                this.readBytesThisCall += written;
+                final long readNanos = System.nanoTime();
+                this.lastReadNanos = readNanos;
+                this.readDeadlineNanos = readNanos + READ_IDLE_TIMEOUT_NANOS;
+                this.readTimeoutWheel.update(this);
             }
 
             final int available = this.pendingBytes;
@@ -74,8 +96,8 @@ final class SocketConnection {
             reads++;
 
             this.protocolHandler.onBytes(this.writer.reader(), available);
-            final int requestLength = this.protocolHandler.requestLength();
             if (this.protocolHandler.payloadComplete()) {
+                final int requestLength = this.protocolHandler.requestLength();
                 final int remaining = this.writer.totalWritten() - requestLength;
                 TransportBuffer.Writer fork = null;
                 if (remaining > 0) {
@@ -89,6 +111,7 @@ final class SocketConnection {
                 if (fork != null) {
                     fork.release(); // publish failed, release the fork if any
                 }
+                this.pendingBytes = available; // reset pending bytes correctly
                 return false;
             }
         }
@@ -122,8 +145,11 @@ final class SocketConnection {
     }
 
     void write(TransportBuffer.Reader reader, long now) throws IOException {
-        if (reader.write(this.channel) > 0) {
-            this.lastWriteNanos = now;
+        this.writeBytesThisCall = 0;
+        final int written = reader.write(this.channel);
+        if (written > 0) {
+            this.writeBytesThisCall = written;
+            this.lastWriteNanos = System.nanoTime();
         }
     }
 
@@ -136,11 +162,13 @@ final class SocketConnection {
             this.response.reader().close();
             this.response = null;
         }
+        // TODO proper cleanup for READY responses in responseBuffer!
         try {
             this.channel.close();
         } catch (IOException _) {
             // best effort shutdown
         }
+        this.key.cancel();
         discard();
     }
 

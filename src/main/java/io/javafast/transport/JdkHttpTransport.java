@@ -14,6 +14,7 @@ import java.nio.channels.SocketChannel;
 
 public final class JdkHttpTransport implements Transport {
 
+    private static final int SELECTOR_THREAD_COUNT = Integer.getInteger("javafast.selector.thread.count", 2);
     private static final int REQUEST_POOL_SIZE = Integer.getInteger("javafast.request.pool.size", 1024); // max pre-allocated request contexts
 
     private volatile boolean stopping;
@@ -23,12 +24,10 @@ public final class JdkHttpTransport implements Transport {
     private final TransportBuffer transportBuffer;
 
     private ServerSocketChannel serverChannel;
-    private Selector selector;
-
-    private SocketSelector socketSelector;
+    private SocketSelectorGroup selectorGroup;
 
     private Thread acceptorThread;
-    private Thread selectorThread;
+    private Thread[] selectorThreads;
 
     public JdkHttpTransport(TransportBuffer transportBuffer) {
         this.runtime = JavaFastRuntime.current();
@@ -38,12 +37,13 @@ public final class JdkHttpTransport implements Transport {
     @Override
     public void start(TransportConfig config) {
         try {
-            this.selector = Selector.open();
-            this.socketSelector = new SocketSelector(
-                this.selector,
-                this.transportBuffer,
-                new HttpProtocolHandler(), // instance per selector thread, runs in selector thread
-                new DefaultHttpRequestDispatcher(this.requestContextPool, this.runtime.routing(), this.runtime.appData()) // instance per selector thread
+            this.selectorGroup = new SocketSelectorGroup(SELECTOR_THREAD_COUNT, () ->
+                new SocketSelector(
+                    Selector.open(),
+                    this.transportBuffer,
+                    new HttpProtocolHandler(), // instance per selector thread, runs in selector thread
+                    new DefaultHttpRequestDispatcher(this.requestContextPool, this.runtime.routing(), this.runtime.appData()) // instance per selector thread
+                )
             );
             this.serverChannel = ServerSocketChannel.open();
             this.serverChannel.configureBlocking(true);
@@ -52,7 +52,13 @@ public final class JdkHttpTransport implements Transport {
             throw new UncheckedIOException("Error starting JdkHttpTransport", e);
         }
         this.acceptorThread = Thread.ofPlatform().name("javafast-acceptor").start(this::acceptLoop);
-        this.selectorThread = Thread.ofPlatform().name("javafast-selector").start(this.socketSelector);
+
+        final int count = this.selectorGroup.count();
+        this.selectorThreads = new Thread[count];
+        for (int i = 0; i < count; i++) {
+            this.selectorThreads[i] = Thread.ofPlatform().name("javafast-selector-" + (i+1))
+                .start(this.selectorGroup.get(i));
+        }
     }
 
     private void acceptLoop() {
@@ -65,7 +71,7 @@ public final class JdkHttpTransport implements Transport {
                 }
                 try {
                     configure(socket);
-                    this.socketSelector.register(socket);
+                    this.selectorGroup.register(socket);
                 } catch (Exception e) {
                     socket.close();
                     if (!this.stopping) {
@@ -102,8 +108,8 @@ public final class JdkHttpTransport implements Transport {
             }
         }
         // wake up selector and request its termination
-        if (this.socketSelector != null) {
-            this.socketSelector.shutdown();
+        if (this.selectorGroup != null) {
+            this.selectorGroup.shutdown();
         }
         // ensure the blocking accept() exits
         if (this.acceptorThread != null) {
@@ -111,7 +117,11 @@ public final class JdkHttpTransport implements Transport {
         }
         // wait for both threads to finish cleanup
         joinUninterruptibly(this.acceptorThread);
-        joinUninterruptibly(this.selectorThread);
+        if (this.selectorThreads != null) {
+            for (Thread selectorThread : this.selectorThreads) {
+                joinUninterruptibly(selectorThread);
+            }
+        }
         if (failure != null) {
             throw new UncheckedIOException("Error stopping JdkHttpTransport", failure);
         }
