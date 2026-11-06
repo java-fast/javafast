@@ -43,7 +43,7 @@ final class SocketConnection {
     SocketConnection writableNext;
     boolean writableQueued;
 
-    // temporary instrumentation
+    // instrumentation fields
     int readBytesThisCall;
     int writeBytesThisCall;
 
@@ -84,9 +84,8 @@ final class SocketConnection {
                 }
                 this.pendingBytes = written;
                 this.readBytesThisCall += written;
-                final long readNanos = System.nanoTime();
-                this.lastReadNanos = readNanos;
-                this.readDeadlineNanos = readNanos + READ_IDLE_TIMEOUT_NANOS;
+                this.lastReadNanos = now;
+                this.readDeadlineNanos = now + READ_IDLE_TIMEOUT_NANOS;
                 this.readTimeoutWheel.update(this);
             }
 
