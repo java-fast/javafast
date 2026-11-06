@@ -49,17 +49,13 @@ class RouterSpec extends Specification implements TestUtils {
         thrown(IllegalArgumentException)
     }
 
-    def "should throw not found when no route matches in handle"() {
+    def "should return false when no route matches in handle"() {
         given:
         def router = new Router()
         Context ctx = contextOf(HttpMethod.GET, '/missing')
 
-        when:
-        router.handle(ctx)
-
-        then:
-        def ex = thrown(HttpResponseException)
-        ex.status() == HttpStatus.NOT_FOUND
+        expect:
+        !router.handle(ctx)
     }
 
     def "should throw forbidden when access controller denies request"() {

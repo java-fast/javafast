@@ -5,7 +5,6 @@ package io.javafast.http;
  */
 public class HttpResponseException extends RuntimeException {
 
-    public static final HttpResponseException NOT_FOUND = new HttpResponseException(HttpStatus.NOT_FOUND);
     public static final HttpResponseException FORBIDDEN = new HttpResponseException(HttpStatus.FORBIDDEN);
 
     private final HttpStatus status;

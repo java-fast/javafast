@@ -68,15 +68,24 @@ public final class DefaultRouting implements RoutingApi {
     }
 
     public void handle(Context context) throws Exception {
-        this.router.handle(context);
+        if (!this.router.handle(context)) {
+            handleNotFound(context);
+        }
+    }
+
+    private void handleNotFound(Context context) throws Exception {
+        context.status(404);
+        context.result("");
+        this.router.handleAfter(context);
+        this.errors.handle(404, context);
     }
 
     public boolean handleException(Context context, Throwable throwable) {
+        if (throwable instanceof SkipHandlersException) {
+            return true;
+        }
         try {
             final boolean handle = this.exceptions.handle(context, throwable);
-            if (throwable instanceof SkipHandlersException) {
-                return handle;
-            }
             // AFTER phase should run in an exception case as well
             this.router.handleAfter(context);
             return handle;

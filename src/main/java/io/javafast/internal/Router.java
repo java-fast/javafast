@@ -10,7 +10,6 @@ import io.javafast.router.AccessController;
 final class Router {
 
     private final RouteRegistry registry;
-    private RouterState routerState;
 
     Router() {
         this(false, false, false, null);
@@ -24,7 +23,7 @@ final class Router {
         this.registry = registry;
     }
 
-    void handle(Context ctx) throws Exception {
+    boolean handle(Context ctx) throws Exception {
         final RouterState state = ((RequestContext) ctx).routerState;
         final ByteString path = ((RequestContext) ctx).target();
         this.registry.findAll(state, HandlerPhase.BEFORE, path, m -> {
@@ -34,7 +33,7 @@ final class Router {
 
         final RouteMatch match = find(ctx.method(), state, path);
         if (match == null) {
-            throw HttpResponseException.NOT_FOUND;
+            return false; // NOT_FOUND
         }
 
         this.registry.findAll(state, HandlerPhase.BEFORE_MATCHED, path, m -> {
@@ -47,7 +46,7 @@ final class Router {
 
         ((RequestContext) ctx).setPathParamMap(match.patternMatch.params);
         match.route().handler().handle(ctx);
-        if (skipRemainingHandlers(ctx)) return;
+        if (skipRemainingHandlers(ctx)) return true;
 
         this.registry.findAll(state, HandlerPhase.AFTER_MATCHED, path, m -> {
             // if afterMatched has no path params, we inherit route's path params instead
@@ -58,6 +57,7 @@ final class Router {
         });
 
         handleAfter(ctx);
+        return true;
     }
 
     void handleAfter(Context ctx) throws Exception {
@@ -65,7 +65,6 @@ final class Router {
         final ByteString path = ((RequestContext) ctx).target();
         this.registry.findAll(state, HandlerPhase.AFTER, path, m -> {
             m.route().handler().handle(ctx);
-            throwIfHandlersSkipped(ctx);
         });
     }
 

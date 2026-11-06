@@ -8,7 +8,7 @@ import java.util.Map;
 /**
  * Match of path params consumed by the core runtime
  */
-final class PathParams extends HashMap<String, String> {
+final class PathParams {
 
     private final PathParam[] params;
     private ByteString requestPath;
@@ -24,19 +24,16 @@ final class PathParams extends HashMap<String, String> {
     void reset(ByteString requestPath) {
         this.requestPath = requestPath;
         this.size = 0;
-        clear();
     }
 
     void add(String name, int start, int length) {
         this.params[this.size++].set(name, start, length);
     }
 
-    @Override
     public boolean isEmpty() {
         return this.size == 0;
     }
 
-    @Override
     public int size() {
         return this.size;
     }
@@ -49,24 +46,23 @@ final class PathParams extends HashMap<String, String> {
     /**
      * Prefer get(int index) if possible, which is faster
      */
-    String get(String name) {
-        return computeIfAbsent(name, key -> {
-            for (int i = 0; i < this.size; i++) {
-                final PathParam param = this.params[i];
-                if (key.equals(param.name)) {
-                    return param.get();
-                }
+    public String get(String name) {
+        for (int i = 0; i < this.size; i++) {
+            final PathParam param = this.params[i];
+            if (name.equals(param.name)) {
+                return param.get();
             }
-            return null;
-        });
+        }
+        return null;
     }
 
     Map<String, String> get() {
+        final Map<String, String> map = new HashMap<>(this.size);
         for (int i = 0; i < this.size; i++) {
             final PathParam param = this.params[i];
-            put(param.name, param.get());
+            map.put(param.name, param.get());
         }
-        return this;
+        return map;
     }
 
     /**

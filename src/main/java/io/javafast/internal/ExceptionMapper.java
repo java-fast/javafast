@@ -29,9 +29,6 @@ final class ExceptionMapper {
                 context.result(""); // set Content-Length: 0
             }
         });
-        add(SkipHandlersException.class, (SkipHandlersException _, Context _) -> {
-            // do nothing
-        });
     }
 
     <E extends Exception> void add(Class<E> type, ExceptionHandler<? super E> handler) {
