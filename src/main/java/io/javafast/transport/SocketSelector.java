@@ -11,6 +11,7 @@ import java.util.Queue;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.LongAdder;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
@@ -32,7 +33,7 @@ final class SocketSelector implements Runnable {
     private static final int TIMEOUT_WHEEL_SIZE = 64;
     private static final long TIMEOUT_TICK_NANOS = TimeUnit.SECONDS.toNanos(1);
 
-    private final SocketMetrics metrics = INSTRUMENTATION_ENABLED ? new SocketMetrics() : null;
+    final SocketMetrics metrics = INSTRUMENTATION_ENABLED ? new SocketMetrics() : null;
     private final Selector selector;
     private final TransportBuffer transportBuffer;
     private final ProtocolHandler protocolHandler;
@@ -48,7 +49,7 @@ final class SocketSelector implements Runnable {
     /**
      * Instrumentation for benchmarking
      */
-    private static final class SocketMetrics {
+    static final class SocketMetrics {
 
         private long lastReportNanos;
         private long nextReport;
@@ -78,6 +79,9 @@ final class SocketSelector implements Runnable {
 
         private final AtomicLong registrationWakeupCalls = new AtomicLong();
         private final AtomicLong responseWakeupCalls = new AtomicLong();
+
+        private final LongAdder virtualThreadsStarted = new LongAdder();
+        private final LongAdder virtualThreadsCompleted = new LongAdder();
 
         void reset() {
             this.loopCount = 0;
@@ -196,6 +200,14 @@ final class SocketSelector implements Runnable {
             this.responseWakeupCalls.incrementAndGet();
         }
 
+        void incrementVirtualThreadsStarted() {
+            this.virtualThreadsStarted.increment();
+        }
+
+        void incrementVirtualThreadsCompleted() {
+            this.virtualThreadsCompleted.increment();
+        }
+
         private void reportReadWriteStats(long elapsedNanos) {
             final double seconds = elapsedNanos / 1_000_000_000.0;
             if (elapsedNanos <= 0) return;
@@ -283,6 +295,8 @@ final class SocketSelector implements Runnable {
             final double otherProcessingPercent =
                 100.0 - selectedProcessingPercent - selectPercent;
 
+            final long activeVTs = this.virtualThreadsStarted.sum() - this.virtualThreadsCompleted.sum();
+
             log.info(() -> String.format(
                 """ 
                     Thread: %s
@@ -308,6 +322,9 @@ final class SocketSelector implements Runnable {
                       registration wakeups/sec:             %.0f
                       wakeup calls/(completed) request:     %.3f
                       total wakeup calls/sec:               %.0f
+                      virtual threads (active):             %d
+                      virtual threads (started/sec):        %.0f
+                      virtual threads (completed/sec):      %.0f
                     """,
                 Thread.currentThread().getName(),
                 this.loopCount / seconds,
@@ -330,7 +347,10 @@ final class SocketSelector implements Runnable {
                 this.responseWakeupCalls.get() / seconds,
                 this.registrationWakeupCalls.get() / seconds,
                 wakeupsPerRequest,
-                totalWakeups / seconds
+                totalWakeups / seconds,
+                activeVTs,
+                this.virtualThreadsStarted.longValue() / seconds,
+                this.virtualThreadsCompleted.longValue() / seconds
             ));
         }
 
@@ -371,7 +391,7 @@ final class SocketSelector implements Runnable {
             while (this.running && !Thread.currentThread().isInterrupted()) {
                 final long loopStart = this.metrics != null ? this.metrics.start() : System.nanoTime();
                 now = loopStart;
-                registerPendingConnections();
+                registerPendingConnections(now);
                 processPendingReads(now);
 
                 final long timeout = computeSelectTimeout(now, nextTimeoutScan);
@@ -391,7 +411,7 @@ final class SocketSelector implements Runnable {
                 }
 
                 now = System.nanoTime();
-                registerPendingConnections();
+                registerPendingConnections(now);
                 if (ready > 0) {
                     if (this.metrics != null) {
                         this.metrics.incrementSelectedKeysCount();
@@ -416,11 +436,11 @@ final class SocketSelector implements Runnable {
         }
     }
 
-    private void registerPendingConnections() throws IOException {
+    private void registerPendingConnections(long now) throws IOException {
         SocketChannel socket;
         while ((socket = this.registrations.poll()) != null) {
             final SelectionKey key = socket.register(this.selector, SelectionKey.OP_READ, null);
-            final SocketConnection conn = new SocketConnection(key, socket, this.protocolHandler, this.readTimeoutWheel, System.nanoTime());
+            final SocketConnection conn = new SocketConnection(key, socket, this.protocolHandler, this.readTimeoutWheel, now);
             conn.index = this.connections.size();
             key.attach(conn);
             this.connections.add(conn);
@@ -540,7 +560,7 @@ final class SocketSelector implements Runnable {
                     return;
                 }
             }
-            final var reader = conn.response.reader();
+            final var reader = conn.response.writer().reader();
             try {
                 final long start = this.metrics != null ? this.metrics.start() : 0L;
                 try {

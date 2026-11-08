@@ -15,17 +15,17 @@ final class ResponseBuffer {
         WRITING
     }
 
-    final class ResponseSlot {
+    static final class ResponseSlot {
         private volatile long sequence = -1;
         private volatile SlotState state = SlotState.FREE;
-        private TransportBuffer.Reader reader;
+        private TransportBuffer.Writer writer;
 
         long sequence() {
             return this.sequence;
         }
 
-        TransportBuffer.Reader reader() {
-            return this.reader;
+        TransportBuffer.Writer writer() {
+            return this.writer;
         }
 
         SlotState state() {
@@ -36,7 +36,10 @@ final class ResponseBuffer {
     private final ResponseSlot[] slots;
     private final int mask;
 
-    private long nextOfferSequence;
+    // selector thread owns offer sequence, volatile reads by VTs
+    private volatile long nextOfferSequence;
+
+    // selector thread owns write sequence, volatile reads by VTs
     private volatile long nextWriteSequence;
 
     private ResponseBuffer(int capacity) {
@@ -54,42 +57,45 @@ final class ResponseBuffer {
     }
 
     /**
-     * Only called by Selector thread
+     * Only called by selector thread
      */
-    long offer(TransportBuffer.Reader reader) {
-        if (this.nextOfferSequence - this.nextWriteSequence >= this.slots.length) {
+    long offer(TransportBuffer.Writer writer) {
+        final long sequence = this.nextOfferSequence;
+        if (sequence - this.nextWriteSequence >= this.slots.length) {
             return -1; // buffer is full
         }
-        final long sequence = this.nextOfferSequence++;
         final ResponseSlot slot = this.slots[index(sequence)];
         slot.sequence = sequence;
-        slot.reader = reader;
+        slot.writer = writer;
         slot.state = SlotState.PROCESSING;
+        this.nextOfferSequence = sequence + 1; // publish only after complete initialization
         return sequence;
     }
 
+    /**
+     * Called by VT processors and selector thread
+     */
     boolean update(long sequence, SlotState state) {
         final ResponseSlot slot = find(sequence);
         switch (state) {
-            case READY -> {
-                // only called by VTs
+            case READY -> { // only called by VTs
                 if (slot.state != SlotState.PROCESSING) {
                     throw new IllegalStateException("Cannot mark " + slot.state + " slot as READY");
                 }
                 slot.state = SlotState.READY;
-                return sequence == this.nextWriteSequence; // volatile read by VT Threads
+                return sequence == this.nextWriteSequence; // now selector can write to the socket
             }
-            case FREE -> {
-                // only called by Selector thread
-                if (sequence != this.nextWriteSequence) {
+            case FREE -> { // only called by selector thread
+                final long next = this.nextWriteSequence;
+                if (sequence != next) {
                     throw new IllegalStateException("Only the head slot can be released");
                 }
                 if (slot.state != SlotState.WRITING) {
                     throw new IllegalStateException("Cannot release a slot that is not WRITING");
                 }
-                slot.reader = null;
+                slot.writer = null;
                 slot.state = SlotState.FREE;
-                this.nextWriteSequence++;
+                this.nextWriteSequence = next + 1; // publish only after complete initialization
                 return false;
             }
             default -> throw new IllegalArgumentException("State transition must be to READY or FREE");
@@ -97,7 +103,7 @@ final class ResponseBuffer {
     }
 
     /**
-     * Only called by Selector thread
+     * Only called by selector thread
      */
     ResponseSlot take() {
         if (this.nextWriteSequence == this.nextOfferSequence) {
@@ -126,9 +132,6 @@ final class ResponseBuffer {
         return (int) (sequence & this.mask);
     }
 
-    /**
-     * Only called by Selector thread
-     */
     int size() {
         return (int) (this.nextOfferSequence - this.nextWriteSequence);
     }

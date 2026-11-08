@@ -1,6 +1,5 @@
 package io.javafast.transport;
 
-import io.javafast.util.Utils;
 import io.javafast.util.function.ThrowingSupplier;
 
 import java.nio.channels.SocketChannel;
@@ -11,9 +10,6 @@ final class SocketSelectorGroup {
     private final SocketSelector[] selectors;
 
     SocketSelectorGroup(int count, ThrowingSupplier<SocketSelector> supplier) {
-        if (Utils.isNotPowerOfTwo(count)) {
-            throw new IllegalArgumentException("count must be power of two");
-        }
         this.selectors = new SocketSelector[count];
         for (int i = 0; i < count; i++) {
             try {
@@ -33,7 +29,8 @@ final class SocketSelectorGroup {
     }
 
     void register(SocketChannel channel) {
-        this.selectors[this.nextSelector++ & (this.selectors.length - 1)].register(channel);
+        final int index = Math.floorMod(this.nextSelector++, this.selectors.length);
+        this.selectors[index].register(channel);
     }
 
     public void shutdown() {

@@ -21,16 +21,17 @@ final class SocketConnection {
     final SelectionKey key;
     final ResponseBuffer responseBuffer = ResponseBuffer.create(Integer.getInteger("javafast.socket.response.buffer.size", 16));
 
+    private TransportBuffer.Writer writer; // current writer
+
     // Timing Wheel
     SocketConnection timeoutNext;
     SocketConnection timeoutPrev;
     int timeoutBucket = -1;
     long readDeadlineNanos; // next bucket
     long lastReadNanos; // socket read time
-
     long lastWriteNanos; // socket write time
 
-    TransportBuffer.Writer writer;
+    // published writer
     TransportBuffer.Writer published;
     long publishedSequence;
 
@@ -56,6 +57,7 @@ final class SocketConnection {
     }
 
     private int pendingBytes;
+
     boolean read(TransportBuffer buffer, long now) throws IOException {
         this.readBytesThisCall = 0;
         if (this.writer == null) {
@@ -119,20 +121,21 @@ final class SocketConnection {
     }
 
     private boolean publish() {
-        final TransportBuffer.Reader reader = this.writer.reader();
-        final long sequence = this.responseBuffer.offer(reader);
-        if (sequence != -1) {
-            final int limit = reader.position();
-            reader.limit(limit); // limit the reader to discard multiple requests written if any
-            reader.reset();
-            this.publishedSequence = sequence;
-            this.published = this.writer;
-            this.protocolHandler.reset();
-            this.writer = null;
-            return true;
+        final long sequence = this.responseBuffer.offer(this.writer);
+        if (sequence == -1) {
+            // TODO disable OP_READ?
+            return false; // response buffer is full, backpressue is done by TCP socket buffers
         }
-        // TODO disable OP_READ?
-        return false; // response buffer is full, backpressue is done by TCP socket buffers
+        final TransportBuffer.Writer writer = this.writer;
+        final TransportBuffer.Reader reader = writer.reader();
+        final int limit = reader.position();
+        reader.limit(limit); // limit the reader to discard multiple requests written if any
+        reader.reset();
+        this.protocolHandler.reset();
+        this.writer = null;
+        this.published = writer;
+        this.publishedSequence = sequence;
+        return true;
     }
 
     private void discard() {
@@ -148,7 +151,7 @@ final class SocketConnection {
         final int written = reader.write(this.channel);
         if (written > 0) {
             this.writeBytesThisCall = written;
-            this.lastWriteNanos = System.nanoTime();
+            this.lastWriteNanos = now;
         }
     }
 
@@ -158,7 +161,7 @@ final class SocketConnection {
         }
         this.closed = true;
         if (this.response != null) {
-            this.response.reader().close();
+            this.response.writer().release();
             this.response = null;
         }
         // TODO proper cleanup for READY responses in responseBuffer!
