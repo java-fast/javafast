@@ -12,6 +12,7 @@ import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.LongAdder;
+import java.util.function.Supplier;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
@@ -36,7 +37,7 @@ final class SocketSelector implements Runnable {
     final SocketMetrics metrics = INSTRUMENTATION_ENABLED ? new SocketMetrics() : null;
     private final Selector selector;
     private final TransportBuffer transportBuffer;
-    private final ProtocolHandler protocolHandler;
+    private final Supplier<ProtocolHandler> protocolHandlerSupplier;
     private final RequestDispatcher requestDispatcher;
 
     private final ReadTimeoutWheel readTimeoutWheel = new ReadTimeoutWheel(TIMEOUT_WHEEL_SIZE, TIMEOUT_TICK_NANOS, System.nanoTime());
@@ -356,10 +357,10 @@ final class SocketSelector implements Runnable {
 
     }
 
-    SocketSelector(Selector selector, TransportBuffer transportBuffer, ProtocolHandler protocolHandler, RequestDispatcher requestDispatcher) {
+    SocketSelector(Selector selector, TransportBuffer transportBuffer, Supplier<ProtocolHandler> protocolHandlerFactory, RequestDispatcher requestDispatcher) {
         this.selector = selector;
         this.transportBuffer = transportBuffer;
-        this.protocolHandler = protocolHandler;
+        this.protocolHandlerSupplier = protocolHandlerFactory;
         this.requestDispatcher = requestDispatcher;
     }
 
@@ -440,7 +441,7 @@ final class SocketSelector implements Runnable {
         SocketChannel socket;
         while ((socket = this.registrations.poll()) != null) {
             final SelectionKey key = socket.register(this.selector, SelectionKey.OP_READ, null);
-            final SocketConnection conn = new SocketConnection(key, socket, this.protocolHandler, this.readTimeoutWheel, now);
+            final SocketConnection conn = new SocketConnection(key, socket, this.protocolHandlerSupplier.get(), this.readTimeoutWheel, now);
             conn.index = this.connections.size();
             key.attach(conn);
             this.connections.add(conn);
@@ -618,6 +619,9 @@ final class SocketSelector implements Runnable {
     }
 
     private long computeSelectTimeout(long now, long nextTimeoutScan) {
+        if (this.readPendingHead != null || this.writableHead != null) {
+            return 0;
+        }
         if (this.connections.isEmpty()) {
             return READ_IDLE_TIMEOUT_NANOS / 1_000_000L;
         }
