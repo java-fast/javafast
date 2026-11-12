@@ -10,6 +10,7 @@ import java.util.List;
 import java.util.Queue;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.LongAdder;
 import java.util.function.Supplier;
@@ -28,9 +29,11 @@ final class SocketSelector implements Runnable {
     static final long READ_IDLE_TIMEOUT_NANOS = Long.getLong("javafast.read.timeout.nanos", TimeUnit.SECONDS.toNanos(10)); // default 10 seconds
 
     private static final long TIMEOUT_SCAN_INTERVAL_NANOS = 1_000_000_000L; // min socket read timeout is 1 second
+
     private static final int MAX_REQUESTS_PER_TURN = 16;
     private static final int MAX_RESPONSES_PER_TURN = 16;
     private static final int MAX_PENDING_READS_PER_TURN = 16;
+
     private static final int TIMEOUT_WHEEL_SIZE = 64;
     private static final long TIMEOUT_TICK_NANOS = TimeUnit.SECONDS.toNanos(1);
 
@@ -45,6 +48,7 @@ final class SocketSelector implements Runnable {
     private final Queue<SocketChannel> registrations = new ConcurrentLinkedQueue<>();
     private final Queue<SocketConnection> errors = new ConcurrentLinkedQueue<>();
 
+    private final AtomicBoolean wakeupPending = new AtomicBoolean();
     private volatile boolean running = true;
 
     /**
@@ -108,6 +112,9 @@ final class SocketSelector implements Runnable {
 
             this.registrationWakeupCalls.set(0);
             this.responseWakeupCalls.set(0);
+
+            this.virtualThreadsStarted.reset();
+            this.virtualThreadsCompleted.reset();
         }
 
         long start() {
@@ -364,6 +371,22 @@ final class SocketSelector implements Runnable {
         this.requestDispatcher = requestDispatcher;
     }
 
+    private static void enableWrite(SocketConnection conn) {
+        final SelectionKey key = conn.key;
+        if (key.isValid()) {
+            key.interestOps(key.interestOps() | SelectionKey.OP_WRITE); // enable to write
+        }
+    }
+
+    private void signalSelector() {
+        if (this.wakeupPending.compareAndSet(false, true)) {
+            if (this.metrics != null) {
+                this.metrics.incrementResponseWakeupCalls();
+            }
+            this.selector.wakeup();
+        }
+    }
+
     void register(SocketChannel socket) {
         if (!this.running) {
             closeQuietly(socket);
@@ -465,11 +488,17 @@ final class SocketSelector implements Runnable {
 
     private void processWritableSockets() {
         SocketConnection conn;
-        while ((conn = pollWritable()) != null) {
-            final SelectionKey key = conn.key;
-            if (key.isValid()) {
-                key.interestOps(key.interestOps() | SelectionKey.OP_WRITE); // enable to write
+        while (true) {
+            while ((conn = pollWritable()) != null) {
+                enableWrite(conn);
             }
+            this.wakeupPending.set(false);
+            // might be new connections added
+            conn = pollWritable();
+            if (conn == null)
+                return;
+
+            enableWrite(conn);
         }
     }
 
@@ -592,23 +621,21 @@ final class SocketSelector implements Runnable {
     private void dispatch(SocketConnection conn) {
         final long sequence = conn.publishedSequence;
         final TransportBuffer.Writer writer = conn.published;
-        // FIXME: run in VT!
-        try {
-            // TransportBuffer ownership has now been transferred to the request processor
-            this.requestDispatcher.dispatch(writer);
-        } catch (Exception e) {
-            log.log(Level.SEVERE, e.getMessage(), e);
-            this.errors.offer(conn); // TODO update and release later
-        } finally {
-            if (conn.responseBuffer.update(sequence, ResponseBuffer.SlotState.READY)) {
-                if (enqueueWritable(conn)) {
-                    if (this.metrics != null) {
-                        this.metrics.incrementResponseWakeupCalls();
+        Thread.ofVirtual().start(() -> {
+            try {
+                // TransportBuffer ownership has now been transferred to the request processor
+                this.requestDispatcher.dispatch(writer);
+            } catch (Exception e) {
+                log.log(Level.SEVERE, e.getMessage(), e);
+                this.errors.offer(conn); // TODO update and release later
+            } finally {
+                if (conn.responseBuffer.update(sequence, ResponseBuffer.SlotState.READY)) {
+                    if (enqueueWritable(conn)) {
+                        signalSelector();
                     }
-                    this.selector.wakeup();
                 }
             }
-        }
+        });
     }
 
     private void checkSocketReadTimeouts(long now) {
