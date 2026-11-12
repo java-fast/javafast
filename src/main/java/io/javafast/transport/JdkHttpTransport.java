@@ -14,7 +14,7 @@ import java.nio.channels.SocketChannel;
 
 public final class JdkHttpTransport implements Transport {
 
-    private static final int SELECTOR_THREAD_COUNT = Integer.getInteger("javafast.selector.thread.count", 2);
+    private static final int SELECTOR_THREAD_COUNT = Integer.getInteger("javafast.selector.thread.count", Runtime.getRuntime().availableProcessors());
     private static final int REQUEST_POOL_SIZE = Integer.getInteger("javafast.request.pool.size", 1024); // max pre-allocated request contexts
 
     private volatile boolean stopping;
@@ -41,7 +41,7 @@ public final class JdkHttpTransport implements Transport {
                 new SocketSelector(
                     Selector.open(),
                     this.transportBuffer,
-                    new HttpProtocolHandler(), // instance per selector thread, runs in selector thread
+                    HttpProtocolHandler::new,
                     new DefaultHttpRequestDispatcher(this.requestContextPool, this.runtime.routing(), this.runtime.appData()) // instance per selector thread
                 )
             );
