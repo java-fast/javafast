@@ -19,7 +19,7 @@ final class SocketConnection {
     private final ProtocolHandler protocolHandler;
     private final ReadTimeoutWheel readTimeoutWheel;
     final SelectionKey key;
-    final ResponseBuffer responseBuffer = ResponseBuffer.create(Integer.getInteger("javafast.socket.response.buffer.size", 16));
+    final ResponseBuffer responseBuffer = ResponseBuffer.create(Integer.getInteger("javafast.socket.response.buffer.size", 32));
 
     private TransportBuffer.Writer writer; // current writer
 
