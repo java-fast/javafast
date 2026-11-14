@@ -47,7 +47,6 @@ final class SocketConnection {
 
     // instrumentation fields
     int readBytesThisCall;
-    int writeBytesThisCall;
 
     SocketConnection(SelectionKey key, SocketChannel channel, ProtocolHandler protocolHandler, ReadTimeoutWheel readTimeoutWheel, long now) {
         this.key = key;
@@ -147,13 +146,12 @@ final class SocketConnection {
         }
     }
 
-    void write(TransportBuffer.Reader reader, long now) throws IOException {
-        this.writeBytesThisCall = 0;
+    int write(TransportBuffer.Reader reader, long now) throws IOException {
         final int written = reader.write(this.channel);
         if (written > 0) {
-            this.writeBytesThisCall = written;
             this.lastWriteNanos = now;
         }
+        return written;
     }
 
     void close() {

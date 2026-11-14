@@ -33,6 +33,7 @@ final class SocketSelector implements Runnable {
     private static final int MAX_REQUESTS_PER_TURN = 16;
     private static final int MAX_RESPONSES_PER_TURN = 16;
     private static final int MAX_PENDING_READS_PER_TURN = 16;
+    private static final int MAX_WRITABLE_CONNECTIONS_PER_TURN = 64;
 
     private static final int TIMEOUT_WHEEL_SIZE = 64;
     private static final long TIMEOUT_TICK_NANOS = TimeUnit.SECONDS.toNanos(1);
@@ -43,7 +44,7 @@ final class SocketSelector implements Runnable {
     private final Supplier<ProtocolHandler> protocolHandlerSupplier;
     private final RequestDispatcher requestDispatcher;
 
-    private final DispatcherPool dispatcherPool = new DispatcherPool(DISPATCHER_POOL_SIZE);
+    private final WorkerPool workerPool = new WorkerPool(DISPATCHER_POOL_SIZE);
     private final ReadTimeoutWheel readTimeoutWheel = new ReadTimeoutWheel(TIMEOUT_WHEEL_SIZE, TIMEOUT_TICK_NANOS, System.nanoTime());
     private final List<SocketConnection> connections = new ArrayList<>();
     private final Queue<SocketChannel> registrations = new ConcurrentLinkedQueue<>();
@@ -375,8 +376,23 @@ final class SocketSelector implements Runnable {
 
     private static void enableWrite(SocketConnection conn) {
         final SelectionKey key = conn.key;
-        if (key.isValid()) {
-            key.interestOps(key.interestOps() | SelectionKey.OP_WRITE); // enable to write
+        if (!key.isValid()) {
+            return;
+        }
+        final int ops = key.interestOps();
+        if ((ops & SelectionKey.OP_WRITE) == 0) {
+            key.interestOps(ops | SelectionKey.OP_WRITE);
+        }
+    }
+
+    private static void disableWrite(SocketConnection conn) {
+        final SelectionKey key = conn.key;
+        if (!key.isValid()) {
+            return;
+        }
+        final int ops = key.interestOps();
+        if ((ops & SelectionKey.OP_WRITE) != 0) {
+            key.interestOps(ops & ~SelectionKey.OP_WRITE);
         }
     }
 
@@ -441,7 +457,7 @@ final class SocketSelector implements Runnable {
 
                 now = System.nanoTime();
                 registerPendingConnections(now);
-                processWritableSockets();
+                processWritableSockets(now);
                 if (now - nextTimeoutScan >= 0) {
                     checkSocketReadTimeouts(now);
                     nextTimeoutScan = now + TIMEOUT_SCAN_INTERVAL_NANOS;
@@ -485,20 +501,27 @@ final class SocketSelector implements Runnable {
         }
     }
 
-    private void processWritableSockets() {
+    private void processWritableSockets(long now) {
+        int processed = 0;
         SocketConnection conn;
-        while (true) {
-            while ((conn = pollWritable()) != null) {
-                enableWrite(conn);
-            }
-            this.wakeupPending.set(false);
-            // might be new connections added
-            conn = pollWritable();
-            if (conn == null)
-                return;
-
-            enableWrite(conn);
+        while (processed < MAX_WRITABLE_CONNECTIONS_PER_TURN && (conn = pollWritable()) != null) {
+            processWrite(conn, now);
+            processed++;
         }
+        // queue still contains work, computeSelectTimeout() will return 0 on the next loop
+        if (hasWritable()) {
+            return;
+        }
+        this.wakeupPending.set(false);
+        // handle the race in between above wakeupPending.set(false)
+        conn = pollWritable();
+        if (conn != null) {
+            processWrite(conn, now);
+        }
+    }
+
+    private synchronized boolean hasWritable() {
+        return this.writableHead != null;
     }
 
     private void processSelectedKey(SelectionKey key, long now) {
@@ -518,49 +541,6 @@ final class SocketSelector implements Runnable {
         }
         if (key.isWritable()) {
             processWrite(conn, now);
-        }
-    }
-
-    private void processSelectedKeys(long now) {
-        final long start = this.metrics != null ? this.metrics.start() : 0L;
-        try {
-            final Iterator<SelectionKey> iterator = this.selector.selectedKeys().iterator();
-            SelectionKey key;
-            SocketConnection conn;
-            while (iterator.hasNext()) {
-                key = iterator.next();
-                iterator.remove();
-                if (this.metrics != null) {
-                    this.metrics.incrementProcessedKeysCount();
-                }
-
-                if (!key.isValid()) {
-                    continue;
-                }
-                if (this.metrics != null) {
-                    this.metrics.incrementValidKeysCount();
-                }
-
-                conn = (SocketConnection) key.attachment();
-                if (conn == null) {
-                    key.cancel();
-                    continue;
-                }
-
-                if (key.isReadable()) {
-                    processRead(conn, now);
-                    if (!key.isValid()) {
-                        continue;
-                    }
-                }
-                if (key.isWritable()) {
-                    processWrite(conn, now);
-                }
-            }
-        } finally {
-            if (this.metrics != null) {
-                this.metrics.selectedKeysFinished(start);
-            }
         }
     }
 
@@ -605,42 +585,45 @@ final class SocketSelector implements Runnable {
             if (conn.response == null) {
                 conn.response = conn.responseBuffer.take();
                 if (conn.response == null) { // no response ready
-                    conn.key.interestOps(conn.key.interestOps() & ~SelectionKey.OP_WRITE); // disable write
+                    disableWrite(conn);
                     return;
                 }
             }
             final var reader = conn.response.writer().reader();
             try {
                 final long start = this.metrics != null ? this.metrics.start() : 0L;
-                try {
-                    conn.write(reader, now);
-                } finally {
-                    if (this.metrics != null) {
-                        this.metrics.writeFinished(start);
-                        this.metrics.bytesWritten(conn.writeBytesThisCall);
-                    }
+                final int written = conn.write(reader, now);
+                if (this.metrics != null) {
+                    this.metrics.writeFinished(start);
+                    this.metrics.bytesWritten(written);
                 }
-                if (!reader.hasRemaining()) {
-                    final long sequence = conn.response.sequence();
-                    reader.close(); // release blocks
-                    conn.response = null;
-                    conn.responseBuffer.update(sequence, ResponseBuffer.SlotState.FREE);
-                    responses++;
-                    if (this.metrics != null) {
-                        this.metrics.incrementCompletedRequests();
-                    }
+                if (reader.hasRemaining()) {
+                    enableWrite(conn); // socket buffer full, wait for next writable event
+                    return;
+                }
+                final long sequence = conn.response.sequence();
+                reader.close(); // release blocks
+                conn.response = null;
+                conn.responseBuffer.update(sequence, ResponseBuffer.SlotState.FREE);
+                responses++;
+                if (this.metrics != null) {
+                    this.metrics.incrementCompletedRequests();
                 }
             } catch (IOException _) {
                 close(conn);
                 return;
             }
         }
+        // fairness limit reached.
+        // continue in the next selector loop, without OP_WRITE
+        disableWrite(conn);
+        enqueueWritable(conn);
     }
 
     private void dispatch(SocketConnection conn) {
         final long sequence = conn.publishedSequence;
         final TransportBuffer.Writer writer = conn.published;
-        this.dispatcherPool.submit(() -> {
+        this.workerPool.submit(() -> {
             try {
                 // TransportBuffer ownership has now been transferred to the request processor
                 this.requestDispatcher.dispatch(writer);
@@ -665,7 +648,7 @@ final class SocketSelector implements Runnable {
     }
 
     private long computeSelectTimeout(long now, long nextTimeoutScan) {
-        if (this.readPendingHead != null || this.writableHead != null) {
+        if (this.readPendingHead != null || hasWritable()) {
             return 0;
         }
         if (this.connections.isEmpty()) {

@@ -5,7 +5,7 @@ import io.javafast.util.Utils;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.locks.LockSupport;
 
-final class DispatcherPool {
+final class WorkerPool {
 
     private final static class Worker implements Runnable {
 
@@ -35,20 +35,22 @@ final class DispatcherPool {
                 try {
                     command.run();
                 } catch (Exception e) {
-                    // let the worker live
-                    // TODO handle exception cases
+                    // for extra safety in case the task doesn't handle exceptions,
+                    // so we let the worker live
                 }
             }
         }
     }
 
     private final Worker[] workers;
+    private final int mask;
     private int nextWorker;
 
-    DispatcherPool(int size) {
+    WorkerPool(int size) {
         if (Utils.isNotPowerOfTwo(size)) {
             throw new IllegalArgumentException("size must be a power of two");
         }
+        this.mask = size - 1;
         this.workers = new Worker[size];
         for (int i = 0; i < size; i++) {
             this.workers[i] = new Worker();
@@ -56,7 +58,7 @@ final class DispatcherPool {
     }
 
     void submit(Runnable task) {
-        final int start = this.nextWorker++ & (this.workers.length - 1);
+        final int start = this.nextWorker++ & this.mask;
         for (int i = 0; i < this.workers.length; i++) {
             final int index = (start + i) % this.workers.length;
             if (this.workers[index].submit(task)) {
