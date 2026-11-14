@@ -4,10 +4,11 @@ import java.io.IOException;
 import java.nio.BufferOverflowException;
 import java.nio.channels.SelectionKey;
 import java.nio.channels.SocketChannel;
-
-import static io.javafast.transport.SocketSelector.READ_IDLE_TIMEOUT_NANOS;
+import java.util.concurrent.TimeUnit;
 
 final class SocketConnection {
+
+    private static final long READ_IDLE_TIMEOUT_NANOS = Long.getLong("javafast.read.timeout.nanos", TimeUnit.SECONDS.toNanos(10)); // default 10 seconds
 
     private static final int MAX_READS_PER_TURN = 16;
     private static final int MAX_READ_BYTES_PER_TURN = 64 * 1024;

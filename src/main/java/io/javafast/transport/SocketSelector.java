@@ -8,8 +8,7 @@ import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Queue;
-import java.util.concurrent.ConcurrentLinkedQueue;
-import java.util.concurrent.TimeUnit;
+import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.LongAdder;
@@ -25,9 +24,10 @@ import java.util.logging.Logger;
 final class SocketSelector implements Runnable {
 
     private static final Logger log = Logger.getLogger(SocketSelector.class.getName());
-    private static final boolean INSTRUMENTATION_ENABLED = Boolean.getBoolean("javafast.instrumentation");
-    static final long READ_IDLE_TIMEOUT_NANOS = Long.getLong("javafast.read.timeout.nanos", TimeUnit.SECONDS.toNanos(10)); // default 10 seconds
 
+    private static final boolean INSTRUMENTATION_ENABLED = Boolean.getBoolean("javafast.instrumentation");
+    private static final int DISPATCHER_POOL_SIZE = Integer.getInteger("javafast.selector.dispatcher.pool.size", 128);
+    private static final long READ_IDLE_TIMEOUT_NANOS = Long.getLong("javafast.read.timeout.nanos", TimeUnit.SECONDS.toNanos(10)); // default 10 seconds
     private static final long TIMEOUT_SCAN_INTERVAL_NANOS = 1_000_000_000L; // min socket read timeout is 1 second
 
     private static final int MAX_REQUESTS_PER_TURN = 16;
@@ -43,6 +43,7 @@ final class SocketSelector implements Runnable {
     private final Supplier<ProtocolHandler> protocolHandlerSupplier;
     private final RequestDispatcher requestDispatcher;
 
+    private final DispatcherPool dispatcherPool = new DispatcherPool(DISPATCHER_POOL_SIZE);
     private final ReadTimeoutWheel readTimeoutWheel = new ReadTimeoutWheel(TIMEOUT_WHEEL_SIZE, TIMEOUT_TICK_NANOS, System.nanoTime());
     private final List<SocketConnection> connections = new ArrayList<>();
     private final Queue<SocketChannel> registrations = new ConcurrentLinkedQueue<>();
@@ -50,6 +51,7 @@ final class SocketSelector implements Runnable {
 
     private final AtomicBoolean wakeupPending = new AtomicBoolean();
     private volatile boolean running = true;
+
 
     /**
      * Instrumentation for benchmarking
@@ -419,16 +421,19 @@ final class SocketSelector implements Runnable {
                 processPendingReads(now);
 
                 final long timeout = computeSelectTimeout(now, nextTimeoutScan);
-                final int ready;
-
                 final long start = this.metrics != null ? this.metrics.start() : 0L;
                 if (timeout == 0) {
-                    ready = this.selector.selectNow();
+                    this.selector.selectNow(
+                        key -> processSelectedKey(key, loopStart)
+                    );
                     if (this.metrics != null) {
                         this.metrics.selectNowFinished(start);
                     }
                 } else {
-                    ready = this.selector.select(timeout);
+                    this.selector.select(
+                        key -> processSelectedKey(key, loopStart),
+                        timeout
+                    );
                     if (this.metrics != null) {
                         this.metrics.selectFinished(start);
                     }
@@ -436,12 +441,6 @@ final class SocketSelector implements Runnable {
 
                 now = System.nanoTime();
                 registerPendingConnections(now);
-                if (ready > 0) {
-                    if (this.metrics != null) {
-                        this.metrics.incrementSelectedKeysCount();
-                    }
-                    processSelectedKeys(now);
-                }
                 processWritableSockets();
                 if (now - nextTimeoutScan >= 0) {
                     checkSocketReadTimeouts(now);
@@ -499,6 +498,26 @@ final class SocketSelector implements Runnable {
                 return;
 
             enableWrite(conn);
+        }
+    }
+
+    private void processSelectedKey(SelectionKey key, long now) {
+        if (!key.isValid()) {
+            return;
+        }
+        final SocketConnection conn = (SocketConnection) key.attachment();
+        if (conn == null) {
+            key.cancel();
+            return;
+        }
+        if (key.isReadable()) {
+            processRead(conn, now);
+            if (!key.isValid()) {
+                return;
+            }
+        }
+        if (key.isWritable()) {
+            processWrite(conn, now);
         }
     }
 
@@ -621,7 +640,7 @@ final class SocketSelector implements Runnable {
     private void dispatch(SocketConnection conn) {
         final long sequence = conn.publishedSequence;
         final TransportBuffer.Writer writer = conn.published;
-        Thread.ofVirtual().start(() -> {
+        this.dispatcherPool.submit(() -> {
             try {
                 // TransportBuffer ownership has now been transferred to the request processor
                 this.requestDispatcher.dispatch(writer);
