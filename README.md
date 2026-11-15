@@ -59,3 +59,6 @@ JavaFast uses a familiar, Javalin-style routing API. Most applications should re
 JavaFast is an experimental project focused on HTTP server architecture, JVM performance, and efficient resource management. It is not production ready yet, and HTTP specifications are not fully supported currently.
 
 More documentation, benchmarks, and examples will follow as the project evolves.
+
+## Benchmarks
+[JavaFast Benchmarks](https://github.com/java-fast/javafast-benchmark)
