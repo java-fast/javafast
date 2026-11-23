@@ -80,17 +80,17 @@ public final class DefaultRouting implements RoutingApi {
         this.errors.handle(404, context);
     }
 
-    public boolean handleException(Context context, Throwable throwable) {
-        if (throwable instanceof SkipHandlersException) {
+    public boolean handleException(Context context, Exception exception) {
+        if (exception instanceof SkipHandlersException) {
             return true;
         }
         try {
-            final boolean handle = this.exceptions.handle(context, throwable);
+            final boolean handle = this.exceptions.handle(context, exception);
             // AFTER phase should run in an exception case as well
             this.router.handleAfter(context);
             return handle;
         } catch (Exception e) {
-            log.log(Level.WARNING, "Exception swallowed due to another exception in AFTER phase", throwable);
+            log.log(Level.WARNING, "Exception swallowed due to another exception in AFTER phase", exception);
             return this.exceptions.handle(context, e);
         }
     }

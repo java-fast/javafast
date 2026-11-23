@@ -33,7 +33,6 @@ final class SocketSelector implements Runnable {
     private static final int MAX_RESPONSES_PER_TURN = 16;
     private static final int MAX_PENDING_READS_PER_TURN = 16;
     private static final int MAX_WRITABLE_CONNECTIONS_PER_TURN = 64;
-
     private static final int TIMEOUT_WHEEL_SIZE = 64;
     private static final long TIMEOUT_TICK_NANOS = TimeUnit.SECONDS.toNanos(1);
 
@@ -48,6 +47,10 @@ final class SocketSelector implements Runnable {
     private final List<SocketConnection> connections = new ArrayList<>();
     private final Queue<SocketChannel> registrations = new ConcurrentLinkedQueue<>();
     private final Queue<SocketConnection> errors = new ConcurrentLinkedQueue<>();
+
+    private static final byte[] INTERNAL_SERVER_ERROR_RESPONSE =
+        "HTTP/1.1 500 Internal Server Error\r\nContent-Length: 21\r\nConnection: close\r\n\r\nInternal Server Error"
+            .getBytes(java.nio.charset.StandardCharsets.US_ASCII);
 
     private final AtomicBoolean wakeupPending = new AtomicBoolean();
     private volatile boolean running = true;
@@ -88,6 +91,9 @@ final class SocketSelector implements Runnable {
         }
     }
 
+    /**
+     * Accessed by Acceptor
+     */
     void register(SocketChannel socket) {
         if (!this.running) {
             closeQuietly(socket);
@@ -286,20 +292,45 @@ final class SocketSelector implements Runnable {
         final long sequence = conn.publishedSequence;
         final TransportBuffer.Writer writer = conn.published;
         this.workerPool.submit(() -> {
+            boolean responseReady = false;
             try {
                 // TransportBuffer ownership has now been transferred to the request processor
                 this.requestDispatcher.dispatch(writer);
-            } catch (Exception e) {
+                responseReady = true;
+            } catch (Throwable e) {
                 log.log(Level.SEVERE, e.getMessage(), e);
-                this.errors.offer(conn); // TODO update and release later
+                responseReady = writeInternalServerError(writer);
             } finally {
-                if (conn.responseBuffer.update(sequence, ResponseBuffer.SlotState.READY)) {
-                    if (enqueueWritable(conn)) {
-                        signalSelector();
+                if (responseReady) {
+                    if (conn.responseBuffer.update(sequence, ResponseBuffer.SlotState.READY)) {
+                        if (enqueueWritable(conn)) {
+                            signalSelector();
+                        }
                     }
+                } else { // enqueue for errors so selector can close connection later
+                    this.errors.offer(conn);
+                    // TODO also we need an abort/cancel mechanism for ResponseBuffer slot/state
                 }
             }
         });
+    }
+
+    private static boolean writeInternalServerError(TransportBuffer.Writer writer) {
+        try {
+            final var reader = writer.reader();
+            reader.reset();
+            reader.limit(-1);
+            writer.reset();
+            writer.writeBytes(INTERNAL_SERVER_ERROR_RESPONSE);
+            return true;
+        } catch (Throwable error) {
+            try { // best-effort release in case of an error
+                writer.release();
+            } catch (Throwable releaseError) {
+                error.addSuppressed(releaseError);
+            }
+            return false;
+        }
     }
 
     private void checkSocketReadTimeouts(long now) {
@@ -372,7 +403,6 @@ final class SocketSelector implements Runnable {
         while (pollWritable() != null) {
             // drain writable queue
         }
-        this.errors.clear();
         try {
             this.selector.close();
         } catch (IOException _) {
