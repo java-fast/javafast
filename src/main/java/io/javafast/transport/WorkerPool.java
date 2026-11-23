@@ -5,8 +5,12 @@ import io.javafast.util.Utils;
 
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.locks.LockSupport;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 
 final class WorkerPool {
+
+    private static final Logger log = Logger.getLogger(WorkerPool.class.getName());
 
     private final SelectorMetrics metrics;
 
@@ -15,6 +19,8 @@ final class WorkerPool {
         private final AtomicReference<Runnable> task = new AtomicReference<>();
         private final Thread thread;
 
+        private volatile boolean mightBeDead = false;
+
         private Worker() {
             this.thread = Thread.ofVirtual().unstarted(this);
             this.thread.start();
@@ -22,6 +28,9 @@ final class WorkerPool {
         }
 
         boolean submit(Runnable command) {
+            if (this.mightBeDead) {
+                return false;
+            }
             if (!this.task.compareAndSet(null, command)) {
                 return false;
             }
@@ -34,14 +43,21 @@ final class WorkerPool {
             while (!Thread.currentThread().isInterrupted()) {
                 Runnable command;
                 while ((command = this.task.getAndSet(null)) == null) {
+                    if (Thread.currentThread().isInterrupted()) {
+                        return;
+                    }
                     LockSupport.park();
                 }
                 try {
                     command.run();
                     metrics.incrementVirtualTasksCompleted();
                 } catch (Exception e) {
+                    log.log(Level.WARNING, "Exception in worker task", e);
                     // for extra safety in case the task doesn't handle exceptions,
                     // so we let the worker live
+                } catch (Error e) {
+                    log.log(Level.SEVERE, "Worker task failed unexpectedly", e);
+                    this.mightBeDead = true;
                 }
             }
         }
