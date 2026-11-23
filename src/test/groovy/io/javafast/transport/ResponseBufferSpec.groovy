@@ -80,14 +80,14 @@ class ResponseBufferSpec extends Specification {
         def s1 = buffer.offer(writers[1])
         def s2 = buffer.offer(writers[2])
 
-        buffer.update(s2, ResponseBuffer.SlotState.READY)
-        buffer.update(s1, ResponseBuffer.SlotState.READY)
+        buffer.update(s2, ResponseBuffer.SlotState.READY, false)
+        buffer.update(s1, ResponseBuffer.SlotState.READY, false)
 
         then: "the head response is still not ready"
         buffer.take() == null
 
         when: "the head response completes"
-        buffer.update(s0, ResponseBuffer.SlotState.READY)
+        buffer.update(s0, ResponseBuffer.SlotState.READY, false)
 
         then: "responses become available in request order"
         def first = buffer.take()
@@ -96,7 +96,7 @@ class ResponseBufferSpec extends Specification {
         first.state() == ResponseBuffer.SlotState.WRITING
 
         when:
-        buffer.update(s0, ResponseBuffer.SlotState.FREE)
+        buffer.update(s0, ResponseBuffer.SlotState.FREE, false)
 
         then:
         def second = buffer.take()
@@ -104,7 +104,7 @@ class ResponseBufferSpec extends Specification {
         second.writer().is(writers[1])
 
         when:
-        buffer.update(s1, ResponseBuffer.SlotState.FREE)
+        buffer.update(s1, ResponseBuffer.SlotState.FREE, false)
 
         then:
         def third = buffer.take()
@@ -112,7 +112,7 @@ class ResponseBufferSpec extends Specification {
         third.writer().is(writers[2])
 
         when:
-        buffer.update(s2, ResponseBuffer.SlotState.FREE)
+        buffer.update(s2, ResponseBuffer.SlotState.FREE, false)
 
         then:
         buffer.size() == 0
@@ -125,7 +125,7 @@ class ResponseBufferSpec extends Specification {
         def sequence = buffer.offer(writer())
 
         when:
-        buffer.update(sequence, ResponseBuffer.SlotState.READY)
+        buffer.update(sequence, ResponseBuffer.SlotState.READY, false)
 
         then:
         def slot = buffer.take()
@@ -142,14 +142,14 @@ class ResponseBufferSpec extends Specification {
         def sequence = buffer.offer(writer())
 
         when:
-        buffer.update(sequence, ResponseBuffer.SlotState.FREE)
+        buffer.update(sequence, ResponseBuffer.SlotState.FREE, false)
 
         then:
         thrown(IllegalStateException)
 
         when:
-        buffer.update(sequence, ResponseBuffer.SlotState.READY)
-        buffer.update(sequence, ResponseBuffer.SlotState.FREE)
+        buffer.update(sequence, ResponseBuffer.SlotState.READY, false)
+        buffer.update(sequence, ResponseBuffer.SlotState.FREE, false)
 
         then:
         thrown(IllegalStateException)
@@ -161,12 +161,12 @@ class ResponseBufferSpec extends Specification {
         def first = buffer.offer(writer())
         def second = buffer.offer(writer())
 
-        buffer.update(first, ResponseBuffer.SlotState.READY)
-        buffer.update(second, ResponseBuffer.SlotState.READY)
+        buffer.update(first, ResponseBuffer.SlotState.READY, false)
+        buffer.update(second, ResponseBuffer.SlotState.READY, false)
         buffer.take()
 
         when:
-        buffer.update(second, ResponseBuffer.SlotState.FREE)
+        buffer.update(second, ResponseBuffer.SlotState.FREE, false)
 
         then:
         thrown(IllegalStateException)
@@ -178,8 +178,8 @@ class ResponseBufferSpec extends Specification {
         def sequence = buffer.offer(writer())
 
         when:
-        buffer.update(sequence, ResponseBuffer.SlotState.READY)
-        buffer.update(sequence, ResponseBuffer.SlotState.READY)
+        buffer.update(sequence, ResponseBuffer.SlotState.READY, false)
+        buffer.update(sequence, ResponseBuffer.SlotState.READY, false)
 
         then:
         thrown(IllegalStateException)
@@ -191,16 +191,16 @@ class ResponseBufferSpec extends Specification {
         def sequence = buffer.offer(writer())
 
         when: "the sequence has never been offered"
-        buffer.update(10, ResponseBuffer.SlotState.READY)
+        buffer.update(10, ResponseBuffer.SlotState.READY, false)
 
         then:
         thrown(IllegalArgumentException)
 
         when: "the response is completed and released"
-        buffer.update(sequence, ResponseBuffer.SlotState.READY)
+        buffer.update(sequence, ResponseBuffer.SlotState.READY, false)
         buffer.take()
-        buffer.update(sequence, ResponseBuffer.SlotState.FREE)
-        buffer.update(sequence, ResponseBuffer.SlotState.READY)
+        buffer.update(sequence, ResponseBuffer.SlotState.FREE, false)
+        buffer.update(sequence, ResponseBuffer.SlotState.READY, false)
 
         then:
         thrown(IllegalArgumentException)
@@ -213,14 +213,14 @@ class ResponseBufferSpec extends Specification {
         def sequence = buffer.offer(originalWriter)
 
         when:
-        buffer.update(sequence, ResponseBuffer.SlotState.READY)
+        buffer.update(sequence, ResponseBuffer.SlotState.READY, false)
         def slot = buffer.take()
 
         then:
         slot.writer().is(originalWriter)
 
         when:
-        buffer.update(sequence, ResponseBuffer.SlotState.FREE)
+        buffer.update(sequence, ResponseBuffer.SlotState.FREE, false)
 
         then:
         slot.writer() == null
@@ -237,7 +237,7 @@ class ResponseBufferSpec extends Specification {
 
         when:
         def firstSequence = buffer.offer(firstWriter)
-        buffer.update(firstSequence, ResponseBuffer.SlotState.READY)
+        buffer.update(firstSequence, ResponseBuffer.SlotState.READY, false)
         def firstSlot = buffer.take()
 
         then:
@@ -245,7 +245,7 @@ class ResponseBufferSpec extends Specification {
         firstSlot.sequence() == firstSequence
 
         when:
-        buffer.update(firstSequence, ResponseBuffer.SlotState.FREE)
+        buffer.update(firstSequence, ResponseBuffer.SlotState.FREE, false)
 
         then:
         buffer.offer(secondWriter) == 1
@@ -269,14 +269,14 @@ class ResponseBufferSpec extends Specification {
                 return false
             }
 
-            buffer.update(sequence, ResponseBuffer.SlotState.READY)
+            buffer.update(sequence, ResponseBuffer.SlotState.READY, false)
             def slot = buffer.take()
 
             if (slot == null || slot.sequence() != expected) {
                 return false
             }
 
-            buffer.update(sequence, ResponseBuffer.SlotState.FREE)
+            buffer.update(sequence, ResponseBuffer.SlotState.FREE, false)
             buffer.size() == 0
         }
     }
