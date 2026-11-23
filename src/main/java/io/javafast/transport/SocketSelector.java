@@ -262,6 +262,7 @@ final class SocketSelector implements Runnable {
     }
 
     private void processWrite(SocketConnection conn, long now) {
+        if (conn.isClosed()) return;
         int responses = 0;
         while (responses < MAX_RESPONSES_PER_TURN) {
             if (conn.response == null) {
@@ -281,12 +282,17 @@ final class SocketSelector implements Runnable {
                     enableWrite(conn); // socket buffer full, wait for next writable event
                     return;
                 }
+                final boolean closeAfterResponse = conn.response.connectionClose();
                 final long sequence = conn.response.sequence();
                 reader.close(); // release blocks
                 conn.response = null;
-                conn.responseBuffer.update(sequence, ResponseBuffer.SlotState.FREE);
+                conn.responseBuffer.update(sequence, ResponseBuffer.SlotState.FREE, false);
                 responses++;
                 this.metrics.incrementCompletedRequests();
+                if (closeAfterResponse) {
+                    close(conn);
+                    return;
+                }
             } catch (IOException _) {
                 close(conn);
                 return;
@@ -302,6 +308,7 @@ final class SocketSelector implements Runnable {
         final TransportBuffer.Writer writer = conn.published;
         this.workerPool.submit(() -> {
             boolean responseReady = false;
+            boolean connectionClose = false;
             try {
                 // TransportBuffer ownership has now been transferred to the request processor
                 this.requestDispatcher.dispatch(writer);
@@ -309,9 +316,10 @@ final class SocketSelector implements Runnable {
             } catch (Throwable e) {
                 log.log(Level.SEVERE, e.getMessage(), e);
                 responseReady = writeInternalServerError(writer);
+                connectionClose = responseReady;
             } finally {
                 if (responseReady) {
-                    if (conn.responseBuffer.update(sequence, ResponseBuffer.SlotState.READY)) {
+                    if (conn.responseBuffer.update(sequence, ResponseBuffer.SlotState.READY, connectionClose)) {
                         if (enqueueWritable(conn)) {
                             signalSelector();
                         }

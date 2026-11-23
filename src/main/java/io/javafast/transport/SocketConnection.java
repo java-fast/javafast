@@ -159,11 +159,11 @@ final class SocketConnection {
             return;
         }
         this.closed = true;
+        this.responseBuffer.close();
         if (this.response != null) {
             this.response.writer().release();
             this.response = null;
         }
-        // TODO proper cleanup for READY responses in responseBuffer!
         try {
             this.channel.close();
         } catch (IOException _) {

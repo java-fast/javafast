@@ -20,6 +20,7 @@ final class ResponseBuffer {
         private volatile long sequence = -1;
         private volatile SlotState state = SlotState.FREE;
         private TransportBuffer.Writer writer;
+        private boolean connectionClose;
 
         long sequence() {
             return this.sequence;
@@ -32,6 +33,10 @@ final class ResponseBuffer {
         SlotState state() {
             return this.state;
         }
+
+        boolean connectionClose() {
+            return this.connectionClose;
+        }
     }
 
     private final ResponseSlot[] slots;
@@ -42,6 +47,8 @@ final class ResponseBuffer {
 
     // selector thread owns write sequence, volatile reads by VTs
     private volatile long nextWriteSequence;
+
+    private volatile boolean closed;
 
     private ResponseBuffer(int capacity) {
         if (capacity <= 0) {
@@ -97,14 +104,19 @@ final class ResponseBuffer {
     /**
      * Called by VT processors and selector thread
      */
-    boolean update(long sequence, SlotState state) {
+    boolean update(long sequence, SlotState state, boolean connectionClose) {
         final ResponseSlot slot = find(sequence);
+        if (this.closed) {
+            releaseSlotWriter(slot);
+            return false;
+        }
         switch (state) {
             case READY -> { // only called by VTs
                 if (slot.state != SlotState.PROCESSING) {
                     throw new IllegalStateException("Cannot mark " + slot.state + " slot as READY");
                 }
-                slot.state = SlotState.READY;
+                slot.connectionClose = connectionClose;
+                slot.state = SlotState.READY; // connectionClose is visible due to happens-before
                 return sequence == this.nextWriteSequence; // now selector can write to the socket
             }
             case FREE -> { // only called by selector thread
@@ -144,14 +156,17 @@ final class ResponseBuffer {
      * Called by VT processors.
      * The selector still owns sequence advancement and writer release.
      */
-    boolean abort(long sequence) {
+    void abort(long sequence) {
         final ResponseSlot slot = find(sequence);
+        if (this.closed) {
+            releaseSlotWriter(slot);
+            return;
+        }
         if (slot.state != SlotState.PROCESSING) {
             throw new IllegalStateException("Cannot abort " + slot.state + " slot");
         }
         // Volatile write publishes the aborted state to the selector
         slot.state = SlotState.ABORTED;
-        return sequence == this.nextWriteSequence;
     }
 
     private ResponseSlot find(long sequence) {
@@ -171,6 +186,27 @@ final class ResponseBuffer {
 
     int size() {
         return (int) (this.nextOfferSequence - this.nextWriteSequence);
+    }
+
+    private void releaseSlotWriter(ResponseSlot slot) {
+        final TransportBuffer.Writer writer = slot.writer;
+        if (writer != null) {
+            writer.release();
+        }
+        slot.writer = null;
+        slot.state = SlotState.FREE;
+    }
+
+    void close() {
+        this.closed = true;
+        for (ResponseSlot slot : this.slots) {
+            final SlotState state = slot.state;
+            if (state == SlotState.READY || state == SlotState.ABORTED) {
+                releaseSlotWriter(slot);
+            }
+            // NOTE: DO NOT release PROCESSING here!
+            // Some workers may still be using the writer
+        }
     }
 
 }
