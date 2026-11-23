@@ -1,17 +1,17 @@
 package io.javafast.transport;
 
+import io.javafast.transport.metrics.SelectorMetrics;
+
 import java.io.IOException;
 import java.nio.channels.SelectionKey;
 import java.nio.channels.Selector;
 import java.nio.channels.SocketChannel;
 import java.util.ArrayList;
-import java.util.Iterator;
 import java.util.List;
 import java.util.Queue;
-import java.util.concurrent.*;
+import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.concurrent.atomic.AtomicLong;
-import java.util.concurrent.atomic.LongAdder;
 import java.util.function.Supplier;
 import java.util.logging.Level;
 import java.util.logging.Logger;
@@ -25,7 +25,6 @@ final class SocketSelector implements Runnable {
 
     private static final Logger log = Logger.getLogger(SocketSelector.class.getName());
 
-    private static final boolean INSTRUMENTATION_ENABLED = Boolean.getBoolean("javafast.instrumentation");
     private static final int DISPATCHER_POOL_SIZE = Integer.getInteger("javafast.selector.dispatcher.pool.size", 128);
     private static final long READ_IDLE_TIMEOUT_NANOS = Long.getLong("javafast.read.timeout.nanos", TimeUnit.SECONDS.toNanos(10)); // default 10 seconds
     private static final long TIMEOUT_SCAN_INTERVAL_NANOS = 1_000_000_000L; // min socket read timeout is 1 second
@@ -38,13 +37,13 @@ final class SocketSelector implements Runnable {
     private static final int TIMEOUT_WHEEL_SIZE = 64;
     private static final long TIMEOUT_TICK_NANOS = TimeUnit.SECONDS.toNanos(1);
 
-    final SocketMetrics metrics = INSTRUMENTATION_ENABLED ? new SocketMetrics() : null;
+    private final SelectorMetrics metrics = SelectorMetrics.create();
     private final Selector selector;
     private final TransportBuffer transportBuffer;
     private final Supplier<ProtocolHandler> protocolHandlerSupplier;
     private final RequestDispatcher requestDispatcher;
 
-    private final WorkerPool workerPool = new WorkerPool(DISPATCHER_POOL_SIZE);
+    private final WorkerPool workerPool = new WorkerPool(DISPATCHER_POOL_SIZE, this.metrics);
     private final ReadTimeoutWheel readTimeoutWheel = new ReadTimeoutWheel(TIMEOUT_WHEEL_SIZE, TIMEOUT_TICK_NANOS, System.nanoTime());
     private final List<SocketConnection> connections = new ArrayList<>();
     private final Queue<SocketChannel> registrations = new ConcurrentLinkedQueue<>();
@@ -52,320 +51,6 @@ final class SocketSelector implements Runnable {
 
     private final AtomicBoolean wakeupPending = new AtomicBoolean();
     private volatile boolean running = true;
-
-
-    /**
-     * Instrumentation for benchmarking
-     */
-    static final class SocketMetrics {
-
-        private long lastReportNanos;
-        private long nextReport;
-
-        private long loopCount;
-        private long loopNanos;
-        private long selectCount;
-        private long selectNanos;
-        private long selectNowCount;
-        private long selectNowNanos;
-        private long selectedKeysNanos;
-        private long selectedKeysCount;
-        private long processedKeysCount;
-        private long validKeysCount;
-
-        private long readCalls;
-        private long readNanos;
-        private long readBytes;
-        private long dispatchNanos;
-        private long dispatchCalls;
-        private long writeCalls;
-        private long writeNanos;
-        private long writeBytes;
-
-        private long readRequests;
-        private long completedRequests;
-
-        private final AtomicLong registrationWakeupCalls = new AtomicLong();
-        private final AtomicLong responseWakeupCalls = new AtomicLong();
-
-        private final LongAdder virtualThreadsStarted = new LongAdder();
-        private final LongAdder virtualThreadsCompleted = new LongAdder();
-
-        void reset() {
-            this.loopCount = 0;
-            this.loopNanos = 0;
-            this.selectCount = 0;
-            this.selectNanos = 0;
-            this.selectNowCount = 0;
-            this.selectNowNanos = 0;
-            this.selectedKeysCount = 0;
-            this.selectedKeysNanos = 0;
-            this.processedKeysCount = 0;
-            this.validKeysCount = 0;
-            this.readCalls = 0;
-            this.readNanos = 0;
-            this.readBytes = 0;
-            this.dispatchCalls = 0;
-            this.dispatchNanos = 0;
-            this.writeCalls = 0;
-            this.writeNanos = 0;
-            this.writeBytes = 0;
-            this.readRequests = 0;
-            this.completedRequests = 0;
-
-            this.registrationWakeupCalls.set(0);
-            this.responseWakeupCalls.set(0);
-
-            this.virtualThreadsStarted.reset();
-            this.virtualThreadsCompleted.reset();
-        }
-
-        long start() {
-            return System.nanoTime();
-        }
-
-        void startReporting(long startedAt) {
-            this.lastReportNanos = startedAt;
-            this.nextReport = startedAt + 1_000_000_000L;
-        }
-
-        void report() {
-            final long now = System.nanoTime();
-            if (now - this.nextReport >= 0) {
-                final long elapsed = now - this.lastReportNanos;
-                reportStats(elapsed);
-                reportReadWriteStats(elapsed);
-                reset();
-                this.lastReportNanos = System.nanoTime();
-                this.nextReport = this.lastReportNanos + 1_000_000_000L;
-            }
-        }
-
-        void loopFinished(long startedAt) {
-            this.loopNanos += System.nanoTime() - startedAt;
-            this.loopCount++;
-        }
-
-        void selectFinished(long startedAt) {
-            this.selectNanos += System.nanoTime() - startedAt;
-            this.selectCount++;
-        }
-
-        void selectNowFinished(long startedAt) {
-            this.selectNowNanos += System.nanoTime() - startedAt;
-            this.selectNowCount++;
-        }
-
-        void incrementSelectedKeysCount() {
-            this.selectedKeysCount++;
-        }
-
-        void selectedKeysFinished(long startedAt) {
-            this.selectedKeysNanos += System.nanoTime() - startedAt;
-        }
-
-        void incrementProcessedKeysCount() {
-            this.processedKeysCount++;
-        }
-
-        void incrementValidKeysCount() {
-            this.validKeysCount++;
-        }
-
-        void readFinished(long startedAt) {
-            this.readNanos += System.nanoTime() - startedAt;
-            this.readCalls++;
-        }
-
-        void bytesRead(int count) {
-            this.readBytes += count;
-        }
-
-        void dispatchFinished(long startedAt) {
-            this.dispatchNanos += System.nanoTime() - startedAt;
-            this.dispatchCalls++;
-        }
-
-        void writeFinished(long startedAt) {
-            this.writeNanos += System.nanoTime() - startedAt;
-            this.writeCalls++;
-        }
-
-        void bytesWritten(int count) {
-            this.writeBytes += count;
-        }
-
-        void incrementReadRequests() {
-            this.readRequests++;
-        }
-
-        void incrementCompletedRequests() {
-            this.completedRequests++;
-        }
-
-        void incrementRegistrationWakeupCalls() {
-            this.registrationWakeupCalls.incrementAndGet();
-        }
-
-        void incrementResponseWakeupCalls() {
-            this.responseWakeupCalls.incrementAndGet();
-        }
-
-        void incrementVirtualThreadsStarted() {
-            this.virtualThreadsStarted.increment();
-        }
-
-        void incrementVirtualThreadsCompleted() {
-            this.virtualThreadsCompleted.increment();
-        }
-
-        private void reportReadWriteStats(long elapsedNanos) {
-            final double seconds = elapsedNanos / 1_000_000_000.0;
-            if (elapsedNanos <= 0) return;
-
-            System.out.printf("""
-            Thread: %s
-            Read:
-              calls:       %,d (%.0f/sec)
-              total time:  %.2f ms
-              avg time:    %.2f ns/call
-              requests:    %,d (%.0f/sec)
-              bytes:       %,d (%.2f MB/sec)
-    
-            Dispatch:
-              calls:       %,d
-              total time:  %.2f ms
-              avg time:    %.2f ns/call
-    
-            Write:
-              calls:       %,d (%.0f/sec)
-              total time:  %.2f ms
-              avg time:    %.2f ns/call
-              responses:   %,d (%.0f/sec)
-              bytes:       %,d (%.2f MB/sec)
-            """,
-                Thread.currentThread().getName(),
-                this.readCalls, this.readCalls / seconds,
-                this.readNanos / 1_000_000.0,
-                this.readCalls == 0 ? 0 : (double) this.readNanos / this.readCalls,
-                this.readRequests, this.readRequests / seconds,
-                this.readBytes, this.readBytes / seconds / 1_000_000.0,
-
-                this.dispatchCalls,
-                this.dispatchNanos / 1_000_000.0,
-                this.dispatchCalls == 0 ? 0 : (double) this.dispatchNanos / this.dispatchCalls,
-
-                this.writeCalls, this.writeCalls / seconds,
-                this.writeNanos / 1_000_000.0,
-                this.writeCalls == 0 ? 0 : (double) this.writeNanos / this.writeCalls,
-                this.completedRequests, this.completedRequests / seconds,
-                this.writeBytes, this.writeBytes / seconds / 1_000_000.0
-            );
-        }
-
-        private void reportStats(long elapsedNanos) {
-            final double seconds = elapsedNanos / 1_000_000_000.0;
-            if (elapsedNanos <= 0) return;
-
-            final long requests = this.completedRequests;
-            final long loops = this.loopCount;
-            final long totalWakeups = this.registrationWakeupCalls.get() + this.responseWakeupCalls.get();
-
-            final double avgLoopNanos =
-                loops == 0 ? 0 : (double) this.loopNanos / loops;
-
-            final double avgSelectNanos =
-                this.selectCount == 0 ? 0 : (double) this.selectNanos / this.selectCount;
-
-            final double avgSelectNowNanos =
-                this.selectNowCount == 0 ? 0 : (double) this.selectNowNanos / this.selectNowCount;
-
-            final double avgRequestsPerLoop =
-                loops == 0 ? 0 : (double) requests / loops;
-
-            final double wakeupsPerRequest =
-                requests == 0 ? 0 : (double) this.responseWakeupCalls.get() / requests;
-
-            final double avgSelectedKeysPerLoop =
-                loops == 0 ? 0 : (double) this.selectedKeysCount / loops;
-
-            final double avgProcessedKeysPerLoop =
-                loops == 0 ? 0 : (double) this.processedKeysCount / loops;
-
-            final double avgValidKeysPerLoop =
-                loops == 0 ? 0 : (double) this.validKeysCount / loops;
-
-            final double selectedProcessingPercent =
-                this.loopNanos == 0 ? 0 :
-                    100.0 * this.selectedKeysNanos / this.loopNanos;
-
-            final double selectPercent =
-                this.loopNanos == 0 ? 0 :
-                    100.0 * (this.selectNanos + this.selectNowNanos) / this.loopNanos;
-
-            final double otherProcessingPercent =
-                100.0 - selectedProcessingPercent - selectPercent;
-
-            final long activeVTs = this.virtualThreadsStarted.sum() - this.virtualThreadsCompleted.sum();
-
-            log.info(() -> String.format(
-                """ 
-                    Thread: %s
-                    SelectorStats:
-                      loops/sec:                            %.0f
-                      avg loop:                             %.1f ns
-                      select calls/sec:                     %.0f
-                      avg select:                           %.1f ns
-                      selectNow calls/sec:                  %.0f
-                      avg selectNow:                        %.1f ns
-                      selected keys/sec:                    %.0f
-                      processed keys/sec:                   %.0f
-                      valid keys/sec:                       %.0f
-                      selected keys/loop:                   %.3f
-                      processed keys/loop:                  %.3f
-                      valid keys/loop:                      %.3f
-                      selected processing:                  %.2f%%
-                      select time:                          %.2f%%
-                      other  time:                          %.2f%%
-                      (completed) requests/sec:             %.0f
-                      (completed) requests/loop:            %.3f
-                      response wakeups/sec:                 %.0f
-                      registration wakeups/sec:             %.0f
-                      wakeup calls/(completed) request:     %.3f
-                      total wakeup calls/sec:               %.0f
-                      virtual threads (active):             %d
-                      virtual threads (started/sec):        %.0f
-                      virtual threads (completed/sec):      %.0f
-                    """,
-                Thread.currentThread().getName(),
-                this.loopCount / seconds,
-                avgLoopNanos,
-                this.selectCount / seconds,
-                avgSelectNanos,
-                this.selectNowCount / seconds,
-                avgSelectNowNanos,
-                this.selectedKeysCount / seconds,
-                this.processedKeysCount / seconds,
-                this.validKeysCount / seconds,
-                avgSelectedKeysPerLoop,
-                avgProcessedKeysPerLoop,
-                avgValidKeysPerLoop,
-                selectedProcessingPercent,
-                selectPercent,
-                otherProcessingPercent,
-                this.completedRequests / seconds,
-                avgRequestsPerLoop,
-                this.responseWakeupCalls.get() / seconds,
-                this.registrationWakeupCalls.get() / seconds,
-                wakeupsPerRequest,
-                totalWakeups / seconds,
-                activeVTs,
-                this.virtualThreadsStarted.longValue() / seconds,
-                this.virtualThreadsCompleted.longValue() / seconds
-            ));
-        }
-
-    }
 
     SocketSelector(Selector selector, TransportBuffer transportBuffer, Supplier<ProtocolHandler> protocolHandlerFactory, RequestDispatcher requestDispatcher) {
         this.selector = selector;
@@ -398,9 +83,7 @@ final class SocketSelector implements Runnable {
 
     private void signalSelector() {
         if (this.wakeupPending.compareAndSet(false, true)) {
-            if (this.metrics != null) {
-                this.metrics.incrementResponseWakeupCalls();
-            }
+            this.metrics.incrementResponseWakeupCalls();
             this.selector.wakeup();
         }
     }
@@ -416,9 +99,7 @@ final class SocketSelector implements Runnable {
             closeQuietly(socket);
             return;
         }
-        if (this.metrics != null) {
-            this.metrics.incrementRegistrationWakeupCalls();
-        }
+        this.metrics.incrementRegistrationWakeupCalls();
         this.selector.wakeup();
     }
 
@@ -427,33 +108,25 @@ final class SocketSelector implements Runnable {
         try {
             long now = System.nanoTime();
             long nextTimeoutScan = now + TIMEOUT_SCAN_INTERVAL_NANOS;
-            if (this.metrics != null) {
-                this.metrics.startReporting(now);
-            }
+            this.metrics.startReporting(now);
             while (this.running && !Thread.currentThread().isInterrupted()) {
-                final long loopStart = this.metrics != null ? this.metrics.start() : System.nanoTime();
+                final long loopStart = System.nanoTime();
                 now = loopStart;
                 registerPendingConnections(now);
                 processPendingReads(now);
 
+                final int keysConsumed;
                 final long timeout = computeSelectTimeout(now, nextTimeoutScan);
-                final long start = this.metrics != null ? this.metrics.start() : 0L;
+                final long start = this.metrics.start();
                 if (timeout == 0) {
-                    this.selector.selectNow(
-                        key -> processSelectedKey(key, loopStart)
-                    );
-                    if (this.metrics != null) {
-                        this.metrics.selectNowFinished(start);
-                    }
+                    keysConsumed = this.selector.selectNow(key -> processSelectedKey(key, loopStart));
+                    this.metrics.selectNowFinished(start);
                 } else {
-                    this.selector.select(
-                        key -> processSelectedKey(key, loopStart),
-                        timeout
-                    );
-                    if (this.metrics != null) {
-                        this.metrics.selectFinished(start);
-                    }
+                    keysConsumed = this.selector.select(key -> processSelectedKey(key, loopStart), timeout);
+                    this.metrics.selectFinished(start);
                 }
+                this.metrics.incrementSelectedKeysCount(keysConsumed);
+                this.metrics.selectedKeysFinished(start);
 
                 now = System.nanoTime();
                 registerPendingConnections(now);
@@ -463,10 +136,8 @@ final class SocketSelector implements Runnable {
                     nextTimeoutScan = now + TIMEOUT_SCAN_INTERVAL_NANOS;
                 }
 
-                if (this.metrics != null) {
-                    this.metrics.loopFinished(loopStart);
-                    this.metrics.report();
-                }
+                this.metrics.loopFinished(loopStart);
+                this.metrics.report();
             }
         } catch (Exception e) {
             throw new RuntimeException("Selector failed", e);
@@ -525,9 +196,11 @@ final class SocketSelector implements Runnable {
     }
 
     private void processSelectedKey(SelectionKey key, long now) {
+        this.metrics.incrementProcessedKeysCount();
         if (!key.isValid()) {
             return;
         }
+        this.metrics.incrementValidKeysCount();
         final SocketConnection conn = (SocketConnection) key.attachment();
         if (conn == null) {
             key.cancel();
@@ -548,28 +221,22 @@ final class SocketSelector implements Runnable {
         try {
             int requests = 0;
             while (requests < MAX_REQUESTS_PER_TURN) {
-                long start = this.metrics != null ? this.metrics.start() : 0L;
+                long start = this.metrics.start();
                 final boolean ready;
                 try {
                     ready = conn.read(this.transportBuffer, now);
                 } finally {
-                    if (this.metrics != null) {
-                        this.metrics.readFinished(start);
-                        this.metrics.bytesRead(conn.readBytesThisCall);
-                    }
+                    this.metrics.readFinished(start);
+                    this.metrics.bytesRead(conn.readBytesThisCall);
                 }
                 if (!ready) {
                     break;
                 }
-                if (this.metrics != null) {
-                    this.metrics.incrementReadRequests();
-                    start = this.metrics.start();
-                }
+                this.metrics.incrementReadRequests();
+                start = this.metrics.start();
                 dispatch(conn);
                 requests++;
-                if (this.metrics != null) {
-                    this.metrics.dispatchFinished(start);
-                }
+                this.metrics.dispatchFinished(start);
             }
             if (conn.pendingBytes() > 0) { // still have written bytes
                 enqueueReadPending(conn); // enqueue for next selector loop
@@ -591,12 +258,10 @@ final class SocketSelector implements Runnable {
             }
             final var reader = conn.response.writer().reader();
             try {
-                final long start = this.metrics != null ? this.metrics.start() : 0L;
+                final long start = this.metrics.start();
                 final int written = conn.write(reader, now);
-                if (this.metrics != null) {
-                    this.metrics.writeFinished(start);
-                    this.metrics.bytesWritten(written);
-                }
+                this.metrics.writeFinished(start);
+                this.metrics.bytesWritten(written);
                 if (reader.hasRemaining()) {
                     enableWrite(conn); // socket buffer full, wait for next writable event
                     return;
@@ -606,16 +271,13 @@ final class SocketSelector implements Runnable {
                 conn.response = null;
                 conn.responseBuffer.update(sequence, ResponseBuffer.SlotState.FREE);
                 responses++;
-                if (this.metrics != null) {
-                    this.metrics.incrementCompletedRequests();
-                }
+                this.metrics.incrementCompletedRequests();
             } catch (IOException _) {
                 close(conn);
                 return;
             }
         }
-        // fairness limit reached.
-        // continue in the next selector loop, without OP_WRITE
+        // fairness limit reached, continue in the next selector loop, without OP_WRITE
         disableWrite(conn);
         enqueueWritable(conn);
     }

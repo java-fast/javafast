@@ -1,5 +1,6 @@
 package io.javafast.transport;
 
+import io.javafast.transport.metrics.SelectorMetrics;
 import io.javafast.util.Utils;
 
 import java.util.concurrent.atomic.AtomicReference;
@@ -7,7 +8,9 @@ import java.util.concurrent.locks.LockSupport;
 
 final class WorkerPool {
 
-    private final static class Worker implements Runnable {
+    private final SelectorMetrics metrics;
+
+    private final class Worker implements Runnable {
 
         private final AtomicReference<Runnable> task = new AtomicReference<>();
         private final Thread thread;
@@ -15,6 +18,7 @@ final class WorkerPool {
         private Worker() {
             this.thread = Thread.ofVirtual().unstarted(this);
             this.thread.start();
+            metrics.incrementVirtualThreadsStarted();
         }
 
         boolean submit(Runnable command) {
@@ -34,6 +38,7 @@ final class WorkerPool {
                 }
                 try {
                     command.run();
+                    metrics.incrementVirtualTasksCompleted();
                 } catch (Exception e) {
                     // for extra safety in case the task doesn't handle exceptions,
                     // so we let the worker live
@@ -46,10 +51,11 @@ final class WorkerPool {
     private final int mask;
     private int nextWorker;
 
-    WorkerPool(int size) {
+    WorkerPool(int size, SelectorMetrics metrics) {
         if (Utils.isNotPowerOfTwo(size)) {
             throw new IllegalArgumentException("size must be a power of two");
         }
+        this.metrics = metrics;
         this.mask = size - 1;
         this.workers = new Worker[size];
         for (int i = 0; i < size; i++) {
@@ -58,13 +64,14 @@ final class WorkerPool {
     }
 
     void submit(Runnable task) {
-        final int start = this.nextWorker++ & this.mask;
+        final int start = this.nextWorker++;
         for (int i = 0; i < this.workers.length; i++) {
-            final int index = (start + i) % this.workers.length;
+            final int index = (start + i) & this.mask;
             if (this.workers[index].submit(task)) {
                 return;
             }
         }
         Thread.ofVirtual().start(task); // fallback, all workers are full, then we create a new VT
+        this.metrics.incrementVirtualThreadsStarted();
     }
 }
