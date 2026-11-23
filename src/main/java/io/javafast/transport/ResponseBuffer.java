@@ -11,6 +11,7 @@ final class ResponseBuffer {
     enum SlotState {
         FREE,
         PROCESSING,
+        ABORTED,
         READY,
         WRITING
     }
@@ -53,6 +54,27 @@ final class ResponseBuffer {
         this.mask = capacity - 1;
         for (int i = 0; i < capacity; i++) {
             this.slots[i] = new ResponseSlot();
+        }
+    }
+
+    /**
+     * Only called by selector thread.
+     * Removes aborted head slots and releases their writers.
+     */
+    private void discardAbortedHead() {
+        while (this.nextWriteSequence != this.nextOfferSequence) {
+            final ResponseSlot slot = this.slots[index(this.nextWriteSequence)];
+            if (slot.sequence != this.nextWriteSequence || slot.state != SlotState.ABORTED) {
+                return;
+            }
+            final long sequence = this.nextWriteSequence;
+            final TransportBuffer.Writer writer = slot.writer;
+            if (writer != null) {
+                writer.release();
+            }
+            slot.writer = null;
+            slot.state = SlotState.FREE;
+            this.nextWriteSequence = sequence + 1;
         }
     }
 
@@ -106,6 +128,7 @@ final class ResponseBuffer {
      * Only called by selector thread
      */
     ResponseSlot take() {
+        discardAbortedHead();
         if (this.nextWriteSequence == this.nextOfferSequence) {
             return null;
         }
@@ -115,6 +138,20 @@ final class ResponseBuffer {
         }
         slot.state = SlotState.WRITING;
         return slot;
+    }
+
+    /**
+     * Called by VT processors.
+     * The selector still owns sequence advancement and writer release.
+     */
+    boolean abort(long sequence) {
+        final ResponseSlot slot = find(sequence);
+        if (slot.state != SlotState.PROCESSING) {
+            throw new IllegalStateException("Cannot abort " + slot.state + " slot");
+        }
+        // Volatile write publishes the aborted state to the selector
+        slot.state = SlotState.ABORTED;
+        return sequence == this.nextWriteSequence;
     }
 
     private ResponseSlot find(long sequence) {

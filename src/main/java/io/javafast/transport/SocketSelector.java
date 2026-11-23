@@ -119,6 +119,7 @@ final class SocketSelector implements Runnable {
                 final long loopStart = System.nanoTime();
                 now = loopStart;
                 registerPendingConnections(now);
+                processErrors();
                 processPendingReads(now);
 
                 final int keysConsumed;
@@ -136,6 +137,7 @@ final class SocketSelector implements Runnable {
 
                 now = System.nanoTime();
                 registerPendingConnections(now);
+                processErrors();
                 processWritableSockets(now);
                 if (now - nextTimeoutScan >= 0) {
                     checkSocketReadTimeouts(now);
@@ -175,6 +177,13 @@ final class SocketSelector implements Runnable {
                 continue;
             }
             processRead(conn, now);
+        }
+    }
+
+    private void processErrors() {
+        SocketConnection conn;
+        while ((conn = this.errors.poll()) != null) {
+            close(conn);
         }
     }
 
@@ -308,8 +317,9 @@ final class SocketSelector implements Runnable {
                         }
                     }
                 } else { // enqueue for errors so selector can close connection later
+                    conn.responseBuffer.abort(sequence); // releases writer internally
                     this.errors.offer(conn);
-                    // TODO also we need an abort/cancel mechanism for ResponseBuffer slot/state
+                    signalSelector();
                 }
             }
         });
@@ -324,11 +334,7 @@ final class SocketSelector implements Runnable {
             writer.writeBytes(INTERNAL_SERVER_ERROR_RESPONSE);
             return true;
         } catch (Throwable error) {
-            try { // best-effort release in case of an error
-                writer.release();
-            } catch (Throwable releaseError) {
-                error.addSuppressed(releaseError);
-            }
+            // conn.responseBuffer.abort will release writer
             return false;
         }
     }
