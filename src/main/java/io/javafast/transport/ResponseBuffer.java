@@ -117,10 +117,7 @@ final class ResponseBuffer {
                 return sequence == this.nextWriteSequence; // now selector can write to the socket
             }
             case FREE -> { // only called by selector thread
-                if (this.closed) {
-                    releaseSlotWriter(slot);
-                    return false;
-                }
+                // If we're here, that means selector already released the writer; we don't release it again
                 final long next = this.nextWriteSequence;
                 if (sequence != next) {
                     throw new IllegalStateException("Only the head slot can be released");

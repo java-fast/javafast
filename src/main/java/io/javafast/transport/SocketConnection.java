@@ -155,11 +155,11 @@ final class SocketConnection {
     }
 
     void close() {
+        this.responseBuffer.close(); // should be called every time for late workers
         if (this.closed) {
             return;
         }
         this.closed = true;
-        this.responseBuffer.close();
         if (this.response != null) {
             this.response.writer().release();
             this.response = null;
