@@ -48,6 +48,7 @@ final class ResponseBuffer {
     // selector thread owns write sequence, volatile reads by VTs
     private volatile long nextWriteSequence;
 
+    // selector thread owns closed, volatile reads by VTs
     private volatile boolean closed;
 
     private ResponseBuffer(int capacity) {
@@ -106,20 +107,20 @@ final class ResponseBuffer {
      */
     boolean update(long sequence, SlotState state, boolean connectionClose) {
         final ResponseSlot slot = find(sequence);
-        if (this.closed) {
-            releaseSlotWriter(slot);
-            return false;
-        }
         switch (state) {
             case READY -> { // only called by VTs
                 if (slot.state != SlotState.PROCESSING) {
                     throw new IllegalStateException("Cannot mark " + slot.state + " slot as READY");
                 }
-                slot.connectionClose = connectionClose;
+                slot.connectionClose = connectionClose || this.closed;
                 slot.state = SlotState.READY; // connectionClose is visible due to happens-before
                 return sequence == this.nextWriteSequence; // now selector can write to the socket
             }
             case FREE -> { // only called by selector thread
+                if (this.closed) {
+                    releaseSlotWriter(slot);
+                    return false;
+                }
                 final long next = this.nextWriteSequence;
                 if (sequence != next) {
                     throw new IllegalStateException("Only the head slot can be released");
@@ -158,10 +159,6 @@ final class ResponseBuffer {
      */
     void abort(long sequence) {
         final ResponseSlot slot = find(sequence);
-        if (this.closed) {
-            releaseSlotWriter(slot);
-            return;
-        }
         if (slot.state != SlotState.PROCESSING) {
             throw new IllegalStateException("Cannot abort " + slot.state + " slot");
         }
@@ -206,6 +203,7 @@ final class ResponseBuffer {
             }
             // NOTE: DO NOT release PROCESSING here!
             // Some workers may still be using the writer
+            // Workers will signal the selector when they are done
         }
     }
 
